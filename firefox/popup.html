@@ -1,51 +1,614 @@
 <!DOCTYPE html>
-<html lang=en><head><meta charset=utf-8>
-<title>TCGP Seller Aggregation</title>
-<style>
-body {font-family:arial;font-size:14px;line-height:18px;color:#FFF;background:#444;padding:0;margin:0;}
-div, button {padding:0;margin:0;}
-table {white-space:nowrap;width:100%;border:none;}
-a {all:unset;cursor:pointer;}
-a:hover {text-decoration:none;}
-.title {text-align:center;white-space:nowrap;background:#000;padding:1px 4px 2px 4px;}
-
-.cartTable {border:none;}
-.cartTable a:hover {color:#f8f;}
-.cartTable svg {padding:0;margin:0;vertical-align:top;}
-.cardRemove {font-size:16px;color:#911;padding:0 3px 0 5px;cursor:pointer;}
-.cardRemove:hover {background:#000;}
-.inCartIcon {color:#191;cursor:pointer;}
-.inCartIcon:hover {color:#911;}
-
-#refreshBtn {display:none;margin:8px auto;padding:2px 20px;background:#ccc;border:2px solid #000;color:#000;border-radius:7px;cursor:pointer;}
-#refreshBtn:hover {color:#1cc;}
-
-.sellerHeader {display:flex;flex-flow:row nowrap;align-items:center;justify-content:space-between;gap:12px;background:#000;margin-top:10px;padding-left:5px;white-space:nowrap;cursor:pointer;}
-.sellerHeader div {padding:1px 0;}
-.sellerHeader div:first-child {margin-right:auto;}
-.sellerHeader div:last-child {background:#444;}
-.sellerHeader a:hover {color:#48d;}
-
-.aggregation {margin-right:8px;}
-.aggregation table {margin-bottom:10px;}
-.aggregation table tr:hover {background:#333;}
-.aggregation table td {padding:0 7px;}
-.aggregation table td:first-child {font-size:12px;}
-.aggregation button {font-family:arial;font-size:10px;line-height:12px;color:#FFF;padding:1px 6px;border:1px solid #999;border-right-color:#000;border-bottom-color:#000;background:none;border-radius:7px;white-space:nowrap;cursor:pointer;}
-.aggregation button:hover {color:#1b1;}
-
-.sellerHeader.accordian + table {display:none;}
-
-#aggBtn {display:block;font-size:14px;line-height:18px;color:#FFF;padding:2px 6px;border:none;background:#000;width:100%;cursor:pointer;}
-:root {scrollbar-width:thin !important;scrollbar-color:#000 #0000 !important;}
-</style></head><body>
-<div class=title>TCGP Seller Aggregation</div>
-<div id=cart>
-  <table class=cartTable><tbody id=cartTable></tbody></table>
-</div>
-<button id=refreshBtn><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg></button>
-<div class=aggregation id=aggregation></div>
-<button id=aggBtn>Aggregate</button>
+<html lang=en>
+<head>
+  <meta charset=utf-8>
+  <title>TCGP Seller Aggregation</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #1a1a1a;
+      background: #f5f5f5;
+      padding: 0;
+      margin: 0;
+      width: 600px;
+      min-height: 400px;
+    }
+    
+    div, button, table, thead, tbody, tr, td, th {
+      padding: 0;
+      margin: 0;
+    }
+    
+    a {
+      color: #0066cc;
+      text-decoration: none;
+    }
+    
+    a:hover {
+      text-decoration: underline;
+    }
+    
+    .title {
+      text-align: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    
+    #cart {
+      background: white;
+      margin: 16px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    
+    .cartTable {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .cartTable td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    
+    .cartTable tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .cartTable tr:hover {
+      background: #f9f9f9;
+    }
+    
+    .cartTable svg {
+      vertical-align: middle;
+    }
+    
+    .cardRemove {
+      font-size: 18px;
+      color: #dc3545;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    
+    .cardRemove:hover {
+      background: #fee;
+    }
+    
+    .inCartIcon {
+      color: #28a745;
+      cursor: default;
+      transition: none;
+    }
+    
+    #refreshBtn {
+      display: none;
+      margin: 16px auto;
+      padding: 10px 24px;
+      background: #0066cc;
+      border: none;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    
+    #refreshBtn:hover {
+      background: #0052a3;
+    }
+    
+    .aggregation {
+      margin: 16px;
+    }
+    
+    .aggregation table {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    
+    .aggregation thead {
+      background: #f0f0f0;
+    }
+    
+    .aggregation th {
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid #ddd;
+    }
+    
+    .aggregation tbody tr:hover {
+      background: #f9f9f9;
+    }
+    
+    .aggregation td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    
+    .aggregation td:first-child {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .aggregation button {
+      font-family: inherit;
+      font-size: 12px;
+      padding: 6px 14px;
+      border: 1px solid #0066cc;
+      background: #0066cc;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+    
+    .aggregation button:hover {
+      background: #0052a3;
+      border-color: #0052a3;
+    }
+    
+    /* Icon button style for Add to Cart */
+    .addToCartX {
+      width: 32px !important;
+      height: 32px !important;
+      padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border-radius: 6px !important;
+      background: #0066cc !important;
+      border: none !important;
+    }
+    
+    .addToCartX:hover {
+      background: #0052a3 !important;
+      transform: scale(1.05);
+    }
+    
+    .addToCartX:active {
+      transform: scale(0.95);
+    }
+    
+    .addToCartX svg {
+      color: white !important;
+    }
+    
+    .sellerHeader {
+      display: flex;
+      flex-flow: row nowrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      margin-bottom: 8px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .sellerHeader:hover {
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .sellerHeader div {
+      padding: 2px 0;
+    }
+    
+    .sellerHeader div:first-child {
+      margin-right: auto;
+      flex: 1;
+    }
+    
+    .sellerHeader .sellerName {
+      font-weight: 600;
+      font-size: 15px;
+    }
+    
+    .sellerHeader .sellerName a {
+      color: rgba(255,255,255,0.9);
+    }
+    
+    .sellerHeader .sellerName a:hover {
+      color: white;
+    }
+    
+    .sellerHeader button {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: white;
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .sellerHeader button:hover {
+      background: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.6);
+    }
+    
+    .sellerHeader.accordian + table {
+      display: none;
+    }
+    
+    #aggBtn {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      color: white;
+      padding: 14px 24px;
+      border: none;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      width: calc(100% - 32px);
+      margin: 0 16px 16px 16px;
+      cursor: pointer;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: all 0.2s;
+    }
+    
+    #aggBtn:hover {
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      transform: translateY(-1px);
+    }
+    
+    #aggBtn:active {
+      transform: translateY(0);
+    }
+    
+    /* Dark Mode Styles */
+    body.dark-mode {
+      color: #e0e0e0;
+      background: #1a1a2e;
+    }
+    
+    body.dark-mode #cart {
+      background: #16213e;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    body.dark-mode .cartTable td {
+      border-bottom: 1px solid #2d3748;
+    }
+    
+    body.dark-mode .cartTable tr:hover {
+      background: #1f2a3f;
+    }
+    
+    body.dark-mode a {
+      color: #63b3ed;
+    }
+    
+    body.dark-mode .cardRemove:hover {
+      background: #742a2a;
+    }
+    
+    body.dark-mode #refreshBtn {
+      background: #4299e1;
+    }
+    
+    body.dark-mode #refreshBtn:hover {
+      background: #3182ce;
+    }
+    
+    body.dark-mode .aggregation table {
+      background: #16213e;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    body.dark-mode .aggregation thead {
+      background: #1f2a3f;
+    }
+    
+    body.dark-mode .aggregation th {
+      color: #a0aec0;
+      border-bottom: 2px solid #2d3748;
+    }
+    
+    body.dark-mode .aggregation tbody tr:hover {
+      background: #1f2a3f;
+    }
+    
+    body.dark-mode .aggregation td {
+      border-bottom: 1px solid #2d3748;
+    }
+    
+    body.dark-mode .aggregation td:first-child {
+      color: #e0e0e0;
+    }
+    
+    body.dark-mode .aggregation button {
+      background: #4299e1;
+      border-color: #4299e1;
+    }
+    
+    body.dark-mode .aggregation button:hover {
+      background: #3182ce;
+      border-color: #3182ce;
+    }
+    
+    body.dark-mode .sellerHeader {
+      background: linear-gradient(135deg, #553a9a 0%, #4a5568 100%);
+    }
+    
+    body.dark-mode .sellerHeader .sellerName a {
+      color: rgba(255,255,255,0.95);
+    }
+    
+    /* Back Button */
+    .backBtn {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: white;
+    }
+    
+    .backBtn:hover {
+      background: rgba(255,255,255,0.25);
+      transform: scale(1.05);
+    }
+    
+    /* Theme Toggle Button */
+    .themeToggle {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: white;
+    }
+    
+    .themeToggle:hover {
+      background: rgba(255,255,255,0.25);
+      transform: scale(1.05);
+    }
+    
+    .themeToggle svg {
+      display: none;
+    }
+    
+    #moonIcon {
+      display: block;
+    }
+    
+    body.dark-mode #moonIcon {
+      display: none;
+    }
+    
+    body.dark-mode #sunIcon {
+      display: block;
+    }
+    
+    /* Improved Remove Button */
+    .cartTable td:last-child {
+      text-align: right;
+      width: 100px;
+    }
+    
+    /* Card Actions Container */
+    .cardActions {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    
+    /* Remove Button */
+    .cardRemove {
+      font-size: 20px;
+      color: #e53e3e;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      cursor: pointer;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    
+    .cardRemove:hover {
+      background: #c53030;
+      color: white;
+      transform: scale(1.05);
+    }
+    
+    /* Menu Button */
+    .cardMenuBtn {
+      font-size: 18px;
+      color: #64748b;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      cursor: pointer;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    
+    .cardMenuBtn:hover {
+      background: #e2e8f0;
+      color: #334155;
+    }
+    
+    /* Dropdown Menu */
+    .cardMenuDropdown {
+      position: absolute;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      padding: 8px;
+      min-width: 200px;
+      z-index: 1000;
+      right: 16px;
+    }
+    
+    .cardMenuDropdown button {
+      width: 100%;
+      text-align: left;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      color: #334155;
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    
+    .cardMenuDropdown button:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    
+    /* Dark mode styles */
+    body.dark-mode .cardRemove:hover {
+      background: #c53030;
+      color: white;
+    }
+    
+    body.dark-mode .cardMenuBtn {
+      color: #94a3b8;
+    }
+    
+    body.dark-mode .cardMenuBtn:hover {
+      background: #334155;
+      color: #e2e8f0;
+    }
+    
+    body.dark-mode .cardMenuDropdown {
+      background: #1e293b;
+      border-color: #334155;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    
+    body.dark-mode .cardMenuDropdown button {
+      color: #e2e8f0;
+    }
+    
+    body.dark-mode .cardMenuDropdown button:hover {
+      background: #334155;
+      color: #f1f5f9;
+    }
+    
+    /* Foil Tag */
+    .foilTag {
+      display: inline-block;
+      background: linear-gradient(135deg, #ff6b6b 0%, #feca57 25%, #48dbfb 50%, #ff9ff3 75%, #54a0ff 100%);
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    
+    /* Info Message */
+    .infoMessage {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px;
+      text-align: center;
+      color: #856404;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    
+    .infoMessage .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      display: block;
+    }
+    
+    .infoMessage strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+    
+    body.dark-mode .infoMessage {
+      background: #4a4036;
+      border-color: #d69e2e;
+      color: #fefcbf;
+    }
+  </style>
+</head>
+<body>
+  <div class=title>TCGP Seller Aggregation</div>
+  <button id=backBtn class=backBtn title="Back to Cart">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+  </button>
+  <button id=themeToggle class=themeToggle>
+    <svg id=moonIcon xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+    <svg id=sunIcon xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+  </button>
+  <div id=cart>
+    <table class=cartTable><tbody id=cartTable></tbody></table>
+  </div>
+  <button id=refreshBtn>
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <polyline points="1 20 1 14 7 14"></polyline>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+    </svg>
+    Refresh
+  </button>
+  <div class=aggregation id=aggregation></div>
+  <button id=aggBtn>Aggregate Sellers</button>
 </body>
 <script src=popup.js></script>
 </html>

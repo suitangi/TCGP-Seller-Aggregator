@@ -1,7 +1,7 @@
 var btnBox, id, path, timerId;
 var div = document.createElement("div");
-var removeBtn = "<button class=TCGPSellerAggBtn type=button onclick=window.postMessage('Remove','*')>Remove From Virtual Cart</button>";
-var addBtn = "<button class=TCGPSellerAggBtn type=button onclick=window.postMessage('Normal','*')>Add to Virtual Cart</button> <button class=TCGPSellerAggBtn type=button onclick=window.postMessage('Foil','*')>Foil</button>";
+var removeBtn = '<button id="TCGPSellerAgg-remove" class="TCGPSellerAggBtn" type=button>Remove From Virtual Cart</button>';
+var addBtn = '<button id="TCGPSellerAgg-add" class="TCGPSellerAggBtn" type=button>Add to Virtual Cart</button> <button id="TCGPSellerAgg-foil" class="TCGPSellerAggBtn" type=button>Add Foil</button>';
 loadCheck();
 chrome.runtime.onMessage.addListener(loadCheck);
 
@@ -33,10 +33,16 @@ function addCard(foil) {
         manaStr += m.outerHTML;
   }
   div.innerHTML = removeBtn; //optimistic
+  attachEventListeners();
   chrome.runtime.sendMessage({ msgType: 'addCard', name: cardName, id: id, foil: foil, mana: manaStr })
   .then(message => {
-    if(message === 2) div.innerHTML = 'Card already in vCart<br>' + removeBtn;
-    else if(message !== 1) div.innerHTML = 'Error adding card<br>' + message + '<br>' + addBtn;
+    if(message === 2) {
+      div.innerHTML = 'Card already in vCart<br>' + removeBtn;
+      attachEventListeners();
+    } else if(message !== 1) {
+      div.innerHTML = 'Error adding card<br>' + message + '<br>' + addBtn;
+      attachEventListeners();
+    }
   }, handleError);
 }
 
@@ -46,16 +52,32 @@ function queryCard() {
   .then(message => {
     div.innerHTML = (message === 1) ? removeBtn : addBtn;
     btnBox.insertAdjacentElement('afterend', div);
+    attachEventListeners();
   }, handleError);
+}
+
+function attachEventListeners() {
+  const addBtnElem = document.getElementById('TCGPSellerAgg-add');
+  const foilBtnElem = document.getElementById('TCGPSellerAgg-foil');
+  const removeBtnElem = document.getElementById('TCGPSellerAgg-remove');
+  
+  if(addBtnElem) addBtnElem.addEventListener('click', () => addCard(false));
+  if(foilBtnElem) foilBtnElem.addEventListener('click', () => addCard(true));
+  if(removeBtnElem) removeBtnElem.addEventListener('click', removeCard);
 }
 
 
 function removeCard() {
   div.innerHTML = addBtn;
+  attachEventListeners();
   chrome.runtime.sendMessage({ msgType: 'removeCard', id: id })
   .then(message => {
-    if(message === 0) div.innerHTML = 'Card not found in vCard<br>' + addBtn;
-    else if(message !== 1) div.innerHTML = 'Error removing card<br>';
+    if(message === 0) {
+      div.innerHTML = 'Card not found in vCart<br>' + addBtn;
+      attachEventListeners();
+    } else if(message !== 1) {
+      div.innerHTML = 'Error removing card<br>';
+    }
   }, handleError);
 }
 
@@ -65,10 +87,10 @@ function handleError(error) {
 }
 
 
+// Browser-specific message handling
 window.addEventListener("message", (event) => {
   if(event.source !== window) return; // ignore other sources
   if(event.data === "Normal") addCard(false);
   if(event.data === "Foil") addCard(true);
   if(event.data === "Remove") removeCard();
 });
-

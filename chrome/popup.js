@@ -1,6 +1,25 @@
 var cards, cartCookie, sellers, semaphore = 0;
 getCards();
 
+// Dark mode toggle
+const themeToggle = document.getElementById('themeToggle');
+const backBtn = document.getElementById('backBtn');
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme === 'dark') {
+  document.body.classList.add('dark-mode');
+}
+
+themeToggle.addEventListener('click', () => {
+  document.body.classList.toggle('dark-mode');
+  const isDark = document.body.classList.contains('dark-mode');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+});
+
+backBtn.addEventListener('click', showCart);
+
+// Hide back button initially (shown only on aggregation page)
+backBtn.style.display = 'none';
+
 chrome.cookies.get({ url: 'https://www.tcgplayer.com', name: 'StoreCart_PRODUCTION' }).then((c) => {
   if(c) {
     cartCookie = c.value.substring(c.value.indexOf('CK=') + 3);
@@ -12,78 +31,185 @@ chrome.cookies.get({ url: 'https://www.tcgplayer.com', name: 'StoreCart_PRODUCTI
 
 
 
-async function getCards() {
-  cards = await chrome.storage.local.get('cards');
-  cards = (cards && cards.cards) ? cards.cards : [];
-  for(c of cards) {
-    let row = cartTable.insertRow();
-    let cell = row.insertCell();
-    cell.innerHTML = c.mana;
-    cell = row.insertCell();
-    cell.innerHTML = `<a target=_blank href="https://www.tcgplayer.com/product/${c.id}?Language=English">${c.name}</a>`;
-    cell = row.insertCell();
-    if(c.inCart)
-      cell.innerHTML = '<svg class="inCartIcon" cardid="' + c.id + '" xmlns="http://www.w3.org/2000/svg" height="18px" width="18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>';
-    cell = row.insertCell();
-    cell.innerHTML = `<span class=cardRemove cardid=${c.id}>X</span>`;
-  }
+function getCards() {
+  chrome.runtime.sendMessage({ msgType: 'getCards' }).then((result) => {
+    cards = result || [];
+    for(c of cards) {
+      let row = cartTable.insertRow();
+      let cell = row.insertCell();
+      cell.innerHTML = c.mana;
+      cell = row.insertCell();
+      // Check if card is foil and replace *F* with foil tag
+      let displayName = c.name;
+      let isFoil = displayName.includes(' *F*');
+      if (isFoil) {
+        displayName = displayName.replace(' *F*', '');
+        cell.innerHTML = `<a target=_blank href="https://www.tcgplayer.com/product/${c.id}?Language=English">${displayName}</a><span class="foilTag">Foil</span>`;
+      } else {
+        cell.innerHTML = `<a target=_blank href="https://www.tcgplayer.com/product/${c.id}?Language=English">${displayName}</a>`;
+      }
+      cell = row.insertCell();
+      if(c.inCart)
+        cell.innerHTML = '<svg class="inCartIcon" cardid="' + c.id + '" xmlns="http://www.w3.org/2000/svg" height="18px" width="18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>';
+      cell = row.insertCell();
+      // Create action buttons cell
+      cell.innerHTML = `
+        <div class="cardActions">
+          <button class="cardMenuBtn" cardid="${c.id}" title="Options">⋮</button>
+          <button class="cardRemove" cardid="${c.id}" title="Remove">×</button>
+        </div>
+        <div class="cardMenuDropdown" id="menu-${c.id}" style="display: none;">
+          <button class="menuToggleInCart" cardid="${c.id}">${c.inCart ? 'Remove TCGPlayer Cart Indicator' : 'Indicate as in TCGPlayer Cart'}</button>
+          <button class="menuToggleFoil" cardid="${c.id}">${isFoil ? 'Change to Normal Print' : 'Change to Foil'}</button>
+        </div>
+      `;
+    }
 
-  var x = document.getElementsByClassName('cardRemove'); //onClick listeners
-  for(xc of x)
-    xc.addEventListener('click', removeCard);
-  x = document.getElementsByClassName('inCartIcon'); //onClick listeners
-  for(xc of x)
-    xc.addEventListener('click', removeCardFromCart); //onClick listeners
-
-  if(!cards) chrome.storage.local.remove('sellers');
+    var x = document.getElementsByClassName('cardRemove'); //onClick listeners
+    for(xc of x)
+      xc.addEventListener('click', removeCard);
+    
+    var y = document.getElementsByClassName('cardMenuBtn'); //dropdown toggle listeners
+    for(yc of y)
+      yc.addEventListener('click', toggleMenu);
+    
+    var z = document.getElementsByClassName('menuToggleInCart'); //toggle in cart listeners
+    for(zc of z)
+      zc.addEventListener('click', toggleInCart);
+    
+    var w = document.getElementsByClassName('menuToggleFoil'); //toggle foil listeners
+    for(wc of w)
+      wc.addEventListener('click', toggleFoil);
+  });
 }
+
+
+function toggleMenu(e) {
+  e.stopPropagation();
+  var cardid = this.getAttribute('cardid');
+  var menu = document.getElementById('menu-' + cardid);
+  
+  // Close all other menus
+  document.querySelectorAll('.cardMenuDropdown').forEach(function(dropdown) {
+    if (dropdown.id !== 'menu-' + cardid) {
+      dropdown.style.display = 'none';
+    }
+  });
+  
+  // Toggle current menu
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+
+function toggleInCart(e) {
+  e.stopPropagation();
+  var cardid = +this.getAttribute('cardid');
+  var card = cards.find(c => c.id === cardid);
+  if(card) {
+    card.inCart = !card.inCart;
+    chrome.runtime.sendMessage({ 
+      msgType: 'toggleInCart', 
+      id: cardid 
+    });
+    // Re-render cart
+    cartTable.innerHTML = '';
+    getCards();
+  }
+}
+
+
+function toggleFoil(e) {
+  e.stopPropagation();
+  var cardid = +this.getAttribute('cardid');
+  var card = cards.find(c => c.id === cardid);
+  if(card) {
+    // Toggle foil status by adding or removing *F*
+    var isFoil = card.name.includes(' *F*');
+    card.name = isFoil ? card.name.replace(' *F*', '') : card.name + ' *F*';
+    chrome.runtime.sendMessage({ 
+      msgType: 'updateCardName', 
+      id: cardid,
+      name: card.name
+    });
+    // Re-render cart
+    cartTable.innerHTML = '';
+    getCards();
+  }
+}
+
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function() {
+  document.querySelectorAll('.cardMenuDropdown').forEach(function(dropdown) {
+    dropdown.style.display = 'none';
+  });
+});
 
 
 async function removeCard() {
   var id = +this.getAttribute('cardid');
   this.parentElement.parentElement.remove();
-  var card = cards.find(c => c.id === id);
-  if(!sellers) {
-    sellers = await chrome.storage.local.get('sellers');
-    sellers = (sellers && sellers.sellers) ? sellers.sellers : [];
-  }
-  delete sellers[card.sellerIdx];
+  await chrome.runtime.sendMessage({ msgType: 'removeCard', id: id });
   cards = cards.filter(c => c.id !== id);
-
-  chrome.storage.local.set({cards: cards});
-  chrome.storage.local.set({sellers: sellers});
 }
 
 
-async function removeCardFromCart() {
-  var id = +this.getAttribute('cardid');
-  var card = cards.find(c => c.id === id);
-  if(!card) return;
-  card.inCart = false;
-  this.remove();
-  if(!sellers) {
-    sellers = await chrome.storage.local.get('sellers');
-    sellers = (sellers && sellers.sellers) ? sellers.sellers : [];
-  }
-  for(seller of sellers[card.sellerIdx])
-    seller.inCart = false;
-
-  chrome.storage.local.set({cards: cards});
-  chrome.storage.local.set({sellers: sellers});
+function showCart() {
+  // Clear current display
+  aggregation.innerHTML = '';
+  cart.style.display = 'block';
+  cartTable.innerHTML = ''; // Clear cart table
+  refreshBtn.style.display = 'none';
+  aggBtn.style.display = 'block';
+  aggBtn.textContent = 'Aggregate Sellers';
+  aggBtn.onclick = aggregate;
+  
+  // Re-render cart
+  getCards();
 }
 
 
-async function aggregate() {
-  if(!sellers) {
-    sellers = await chrome.storage.local.get('sellers');
-    sellers = (sellers && sellers.sellers) ? sellers.sellers : [];
-  }
+function aggregate() {
+  chrome.runtime.sendMessage({ msgType: 'aggregate' }).then((result) => {
+    sellers = result || [];
+    aggregate3(sellers);
+  });
+}
 
+
+function aggregate3(_sellers) {
+  if(!(_sellers instanceof Event)) sellers = _sellers;
+
+  // Show back button on aggregation page
+  backBtn.style.display = 'block';
+  
   cart.style.display = 'none';
   refreshBtn.style.display = 'none';
   aggBtn.style.display = 'none';
   aggregation.innerHTML = '';
   var count = 0, maxAggregation = 0, sellerTotals = [];
+
+  // Check if we have enough cards for aggregation (minimum 3 available cards)
+  var availableCards = cards.filter(c => !c.inCart);
+  if(availableCards.length < 3) {
+    aggregation.innerHTML = `
+      <div class="infoMessage">
+        <span class="icon">📦</span>
+        <strong>Need More Cards</strong>
+        You have ${cards.length} card(s) in your virtual cart, but ${availableCards.length < 3 ? 'only ' + availableCards.length + ' card(s) are available for aggregation' : ''}.<br><br>
+        Please add at least 3 cards to your virtual cart to see seller aggregation results.<br><br>
+        The aggregation algorithm needs multiple cards to identify best combination of sellers that minimizes shipping costs. With fewer cards, each card is typically best purchased from different sellers, making aggregation unnecessary.
+      </div>
+    `;
+    aggBtn.style.display = 'block';
+    aggBtn.textContent = '← Back to Cart';
+    aggBtn.onclick = showCart;
+    return;
+  }
+  
+  // Reset button text and function
+  aggBtn.textContent = 'Aggregate Sellers';
+  aggBtn.onclick = aggregate;
 
   for(card of cards) { //max aggregation & min cost
    if(card.inCart) continue;
@@ -130,12 +256,35 @@ async function aggregate() {
       if(slrIdx >= 0) numInCart += !!sellers[card.sellerIdx][slrIdx].inCart;
       if(card.inCart) continue;
       price = (slrIdx < 0) ? '-' : '$' + sellers[card.sellerIdx][slrIdx].price;
+      // Remove *F* from card name for display
+      let displayName = card.name.replace(' *F*', '');
+      let foilTag = card.name.includes(' *F*') ? '<span class="foilTag">Foil</span>' : '';
+      // Get quantity from seller data
+      let quantity = slrIdx >= 0 ? sellers[card.sellerIdx][slrIdx].quantity : '-';
       if(price !== '-')
-        htmlStr += `<tr><td>${card.name}</td><td>${card.minCost}</td><td>${card.minCostShown}</td><td>${price}</td><td><button class=addToCartX sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx}>Add to Cart</button></td></tr>`;
+        htmlStr += `<tr><td>${displayName}${foilTag}</td><td>${card.minCost}</td><td>${card.minCostShown}</td><td>${price}</td><td>${quantity}</td><td><button class=addToCartX sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx} title="Add to Cart">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+        </button></td></tr>`;
       else
-        htmlStr += '<tr><td>' + card.name + '</td><td>-</td><td>-</td><td>-</td><td>Unavailable</td></tr>';
+        htmlStr += '<tr><td>' + displayName + foilTag + '</td><td>-</td><td>-</td><td>-</td><td>-</td><td style="color:#999;">Unavailable</td></tr>';
     }
-    aggregation.innerHTML += `<div class="sellerHeader accordian" id=${s[0]}><div class=sellerName>${s[2]} <a target=_blank href="https://shop.tcgplayer.com/sellerfeedback/${s[4]}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></div><div>${s[1]} / ${count}</div><div><svg xmlns="http://www.w3.org/2000/svg" height="12px" width="12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg> ${numInCart}</div><div>$${s[3].toFixed(2)}</div><div><button class=addToCartA sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx}>Add All to Cart</button></div></div><table id=ct${s[0]}><tbody>` + htmlStr + '</tbody></table>';
+    
+    // Add column headers for price columns
+    const tableHtml = `
+      <table>
+        <thead>
+          <tr>
+            <th>Card Name</th>
+            <th title="Minimum price across all sellers">Min Price</th>
+            <th title="Minimum price from sellers in this aggregation">Min in List</th>
+            <th title="Price from this specific seller">Seller Price</th>
+            <th title="Available stock quantity">Qty</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>` + htmlStr + '</tbody></table>';
+    
+    aggregation.innerHTML += `<div class="sellerHeader accordian" id=${s[0]}><div class=sellerName>${s[2]} <a target=_blank href="https://shop.tcgplayer.com/sellerfeedback/${s[4]}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></div><div>${s[1]} / ${count}</div><div><svg xmlns="http://www.w3.org/2000/svg" height="12px" width="12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg> ${numInCart}</div><div>$${s[3].toFixed(2)}</div><div><button class=addToCartA sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx}>Add All</button></div></div>` + tableHtml;
   }
 
 
@@ -177,13 +326,15 @@ function addToCart(btn, addAll=false) {
       if(card) {
         card.inCart = true;
         seller.inCart = true;
+        chrome.runtime.sendMessage({ 
+          msgType: 'addCardToCart', 
+          id: card.id, 
+          sellerIdx: sellerIdx, 
+          sellerIdxIdx: +elem.getAttribute('sellerIdxIdx') 
+        });
       }
     }
     else elem.style.color = '#F00';
-    if(!semaphore) {
-      chrome.storage.local.set({cards: cards});
-      chrome.storage.local.set({sellers: sellers});
-    }
   }
 
   xhttp.open('POST', 'https://mpgateway.tcgplayer.com/v1/cart/' + cartCookie + '/item/add', true);
@@ -222,4 +373,3 @@ function handleError(message) {
 
 aggBtn.addEventListener("click", aggregate);
 refreshBtn.addEventListener('click', aggregate);
-

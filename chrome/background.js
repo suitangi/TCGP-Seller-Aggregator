@@ -68,6 +68,46 @@ async function contentMsg(request) {
   if(request.msgType === 'addCard') res = await addCard(_id, request.name, request.foil, request.mana);
   if(request.msgType === 'queryCard') res = await queryCard(_id);
   if(request.msgType === 'removeCard') res = await removeCard(_id);
+  if(request.msgType === 'getCards') {
+    const { cards = [] } = await chrome.storage.local.get('cards');
+    return cards;
+  }
+  if(request.msgType === 'aggregate') {
+    const { sellers = [] } = await chrome.storage.local.get('sellers');
+    return sellers;
+  }
+  if(request.msgType === 'addCardToCart') {
+    const { cards = [] } = await chrome.storage.local.get('cards');
+    const { sellers = [] } = await chrome.storage.local.get('sellers');
+    const card = cards.find(c => c.id === _id);
+    if(card && sellers[+request.sellerIdx]) {
+      card.inCart = true;
+      sellers[+request.sellerIdx][+request.sellerIdxIdx].inCart = true;
+      await chrome.storage.local.set({cards: cards});
+      await chrome.storage.local.set({sellers: sellers});
+    }
+    return 1;
+  }
+  if(request.msgType === 'toggleInCart') {
+    const { cards = [] } = await chrome.storage.local.get('cards');
+    const card = cards.find(c => c.id === _id);
+    if(card) {
+      card.inCart = !card.inCart;
+      await chrome.storage.local.set({cards: cards});
+      return 1;
+    }
+    return 0;
+  }
+  if(request.msgType === 'updateCardName') {
+    const { cards = [] } = await chrome.storage.local.get('cards');
+    const card = cards.find(c => c.id === _id);
+    if(card) {
+      card.name = request.name;
+      await chrome.storage.local.set({cards: cards});
+      return 1;
+    }
+    return 0;
+  }
 
   return res;
 }
@@ -82,4 +122,3 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if(changeInfo.url && tab.url.startsWith('https://www.tcgplayer.com/product/'))
     chrome.tabs.sendMessage(tab.id, 1);
 });
-

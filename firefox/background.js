@@ -87,6 +87,20 @@ function contentMsg(request, sender, sendResponse) {
   if(request.msgType === 'queryCard') res = queryCard(_id);
   if(request.msgType === 'addCardToCart') { res = cardCart(_id, true); sellers[+request.sellerIdx][+request.sellerIdxIdx].inCart = true; }
   if(request.msgType === 'removeCardFromCart') { res = cardCart(_id, false); const si = +request.sellerIdx; for(let i = 0; i < sellers[si].length; i++) sellers[si][i].inCart = false; }
+  if(request.msgType === 'toggleInCart') {
+    var card = cards.find(c => c.id === _id);
+    if(card) {
+      card.inCart = !card.inCart;
+      res = 1;
+    }
+  }
+  if(request.msgType === 'updateCardName') {
+    var card = cards.find(c => c.id === _id);
+    if(card) {
+      card.name = request.name;
+      res = 1;
+    }
+  }
   if(request.msgType === 'getCards') return getCart(sendResponse);
   if(request.msgType === 'aggregate') return getSellers(sendResponse);
 
@@ -99,4 +113,3 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if(changeInfo.url && tab.url.startsWith('https://www.tcgplayer.com/product/'))
     browser.tabs.sendMessage(tab.id, 1);
 }, { properties: ["url"] });
-
