@@ -1,15 +1,17 @@
 var sellerFilters = {"filters":{"term":{"sellerStatus":"Live","channelId":0,"language":["English"],"printing":["Foil"]},"range":{"quantity":{"gte":1}},"exclude":{"channelExclusion":0}},"sort":{"field":"price+shipping","order":"asc"},"context":{"shippingCountry":"US","cart":{}},"aggregations":["listingType"],"size":50,"from":0};
 
 
-async function addCard(id, name, foil, mana) {
+async function addCard(id, name, isFoil, mana) {
   let pageTotal = 0, sellersAll = [];
 
   const { cards = [] } = await chrome.storage.local.get('cards');
   const { sellers = [] } = await chrome.storage.local.get('sellers');
-  if(cards.some(c => c.id === id)) return 2;
+  
+  // Check if this specific variant (foil or non-foil) already exists
+  if(cards.some(c => c.id === id && c.isFoil === isFoil)) return 2;
 
   sellerFilters.from = 0;
-  sellerFilters.filters.term.printing[0] = foil ? "Foil" : "Normal";
+  sellerFilters.filters.term.printing[0] = isFoil ? "Foil" : "Normal";
 
   while(true) { //paginate sellers for card
     const response = await fetch(`https://mp-search-api.tcgplayer.com/v1/product/${id}/listings`, {method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -35,8 +37,8 @@ async function addCard(id, name, foil, mana) {
   sellersAll = sellersAll.filter((value, index, self) => self.findIndex(t => t.sellerId === value.sellerId) === index);
   sellers.push(sellersAll);
 
-  if(foil) name += ' *F*';
-  cards.push({ id: id, name: name, mana: mana, sellerIdx: sellers.length - 1, inCart: false });
+  // Store with isFoil boolean instead of *F* in name
+  cards.push({ id: id, name: name, isFoil: isFoil, mana: mana, sellerIdx: sellers.length - 1, inCart: false });
 
   await chrome.storage.local.set({cards: cards});
   await chrome.storage.local.set({sellers: sellers});
@@ -46,17 +48,25 @@ async function addCard(id, name, foil, mana) {
 
 async function queryCard(id) {
   var { cards = [] } = await chrome.storage.local.get('cards');
-  return +cards.some(c => c.id === id);
+  // Return separate statuses for foil and non-foil variants
+  return {
+    nonFoil: cards.some(c => c.id === id && !c.isFoil),
+    foil: cards.some(c => c.id === id && c.isFoil)
+  };
 }
 
 
-async function removeCard(id) {
+async function removeCard(id, isFoil) {
   var { cards = [] } = await chrome.storage.local.get('cards');
-  var card = cards.find(c => c.id === id);
+  var card = cards.find(c => c.id === id && c.isFoil === isFoil);
   if(!card) return 0;
   var { sellers = [] } = await chrome.storage.local.get('sellers');
-  delete sellers[card.sellerIdx];
-  cards = cards.filter(c => c.id !== id);
+  // Only delete seller data if no other cards use it
+  var otherCardsUseSeller = cards.some(c => c.sellerIdx === card.sellerIdx && c.id !== id);
+  if(!otherCardsUseSeller) {
+    delete sellers[card.sellerIdx];
+  }
+  cards = cards.filter(c => !(c.id === id && c.isFoil === isFoil));
   await chrome.storage.local.set({cards: cards});
   await chrome.storage.local.set({sellers: sellers});
   return 1;
@@ -65,9 +75,9 @@ async function removeCard(id) {
 
 async function contentMsg(request) {
   var res = 0, _id = +request.id;
-  if(request.msgType === 'addCard') res = await addCard(_id, request.name, request.foil, request.mana);
+  if(request.msgType === 'addCard') res = await addCard(_id, request.name, request.isFoil, request.mana);
   if(request.msgType === 'queryCard') res = await queryCard(_id);
-  if(request.msgType === 'removeCard') res = await removeCard(_id);
+  if(request.msgType === 'removeCard') res = await removeCard(_id, request.isFoil);
   if(request.msgType === 'getCards') {
     const { cards = [] } = await chrome.storage.local.get('cards');
     return cards;

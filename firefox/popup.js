@@ -39,11 +39,9 @@ function getCards() {
       let cell = row.insertCell();
       cell.innerHTML = c.mana;
       cell = row.insertCell();
-      // Check if card is foil and replace *F* with foil tag
+      // Use isFoil boolean to display foil tag
       let displayName = c.name;
-      let isFoil = displayName.includes(' *F*');
-      if (isFoil) {
-        displayName = displayName.replace(' *F*', '');
+      if (c.isFoil) {
         cell.innerHTML = `<a target=_blank href="https://www.tcgplayer.com/product/${c.id}?Language=English">${displayName}</a><span class="foilTag">Foil</span>`;
       } else {
         cell.innerHTML = `<a target=_blank href="https://www.tcgplayer.com/product/${c.id}?Language=English">${displayName}</a>`;
@@ -60,7 +58,6 @@ function getCards() {
         </div>
         <div class="cardMenuDropdown" id="menu-${c.id}" style="display: none;">
           <button class="menuToggleInCart" cardid="${c.id}">${c.inCart ? 'Remove TCGPlayer Cart Indicator' : 'Indicate as in TCGPlayer Cart'}</button>
-          <button class="menuToggleFoil" cardid="${c.id}">${isFoil ? 'Change to Normal Print' : 'Change to Foil'}</button>
         </div>
       `;
     }
@@ -76,10 +73,6 @@ function getCards() {
     var z = document.getElementsByClassName('menuToggleInCart'); //toggle in cart listeners
     for(zc of z)
       zc.addEventListener('click', toggleInCart);
-    
-    var w = document.getElementsByClassName('menuToggleFoil'); //toggle foil listeners
-    for(wc of w)
-      wc.addEventListener('click', toggleFoil);
   });
 }
 
@@ -118,26 +111,6 @@ function toggleInCart(e) {
 }
 
 
-function toggleFoil(e) {
-  e.stopPropagation();
-  var cardid = +this.getAttribute('cardid');
-  var card = cards.find(c => c.id === cardid);
-  if(card) {
-    // Toggle foil status by adding or removing *F*
-    var isFoil = card.name.includes(' *F*');
-    card.name = isFoil ? card.name.replace(' *F*', '') : card.name + ' *F*';
-    browser.runtime.sendMessage({ 
-      msgType: 'updateCardName', 
-      id: cardid,
-      name: card.name
-    });
-    // Re-render cart
-    cartTable.innerHTML = '';
-    getCards();
-  }
-}
-
-
 // Close dropdowns when clicking outside
 document.addEventListener('click', function() {
   document.querySelectorAll('.cardMenuDropdown').forEach(function(dropdown) {
@@ -148,8 +121,11 @@ document.addEventListener('click', function() {
 
 async function removeCard() {
   var id = +this.getAttribute('cardid');
-  await browser.runtime.sendMessage({ msgType: 'removeCard', id: id });
-  cards = cards.filter(c => c.id !== id);
+  var card = cards.find(c => c.id === id);
+  if(!card) return;
+  
+  await browser.runtime.sendMessage({ msgType: 'removeCard', id: id, isFoil: card.isFoil });
+  cards = cards.filter(c => !(c.id === id && c.isFoil === card.isFoil));
   // Re-render cart to ensure consistent state
   cartTable.innerHTML = '';
   getCards();
@@ -261,9 +237,9 @@ function aggregate3(_sellers) {
       if(slrIdx >= 0) numInCart += !!sellers[card.sellerIdx][slrIdx].inCart;
       if(card.inCart) continue;
       price = (slrIdx < 0) ? '-' : '$' + sellers[card.sellerIdx][slrIdx].price;
-      // Remove *F* from card name for display
-      let displayName = card.name.replace(' *F*', '');
-      let foilTag = card.name.includes(' *F*') ? '<span class="foilTag">Foil</span>' : '';
+      // Use isFoil boolean for display
+      let displayName = card.name;
+      let foilTag = card.isFoil ? '<span class="foilTag">Foil</span>' : '';
       // Get quantity from seller data
       let quantity = slrIdx >= 0 ? sellers[card.sellerIdx][slrIdx].quantity : '-';
       if(price !== '-')
