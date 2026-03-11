@@ -148,9 +148,11 @@ document.addEventListener('click', function() {
 
 async function removeCard() {
   var id = +this.getAttribute('cardid');
-  this.parentElement.parentElement.remove();
   await chrome.runtime.sendMessage({ msgType: 'removeCard', id: id });
   cards = cards.filter(c => c.id !== id);
+  // Re-render cart to ensure consistent state
+  cartTable.innerHTML = '';
+  getCards();
 }
 
 
@@ -163,6 +165,9 @@ function showCart() {
   aggBtn.style.display = 'block';
   aggBtn.textContent = 'Aggregate Sellers';
   aggBtn.onclick = aggregate;
+  
+  // Hide back button on cart page
+  backBtn.style.display = 'none';
   
   // Re-render cart
   getCards();
