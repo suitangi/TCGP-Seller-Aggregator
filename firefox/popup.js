@@ -375,7 +375,7 @@ function aggregate3(_sellers) {
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
         </button></td></tr>`;
       else
-        htmlStr += '<tr><td>' + displayName + foilTag + '</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td style="color:#999;">Unavailable</td></tr>';
+        htmlStr += '<tr><td>' + displayName + foilTag + '</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td style="color:#999;">Unavail.</td></tr>';
     }
     
     // Add column headers for price columns
@@ -388,13 +388,38 @@ function aggregate3(_sellers) {
             <th title="Minimum price from sellers in this aggregation">Min in List</th>
             <th title="Price from this specific seller">Seller Price</th>
             <th title="Available stock quantity">Stock</th>
-            <th title="Stock status relative to needed quantity">Status</th>
+            <th title="Stock status">Status</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>` + htmlStr + '</tbody></table>';
     
-    aggregation.innerHTML += `<div class="sellerHeader accordian" id=${s[0]}><div class=sellerName>${s[2]} <a target=_blank href="https://shop.tcgplayer.com/sellerfeedback/${s[4]}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></div><div>${s[1]} / ${count}</div><div><svg xmlns="http://www.w3.org/2000/svg" height="12px" width="12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg> ${numInCart}</div><div>$${s[3].toFixed(2)}</div><div><button class=addToCartA sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx}>Add All</button></div></div>` + tableHtml;
+    // Calculate shipping cost from first available listing for this seller
+    let shippingCost = 0;
+    for(card of cards) {
+      if(card.inCart) continue;
+      let slrIdx = sellers[card.sellerIdx].findIndex((sel) => sel.sellerId === s[0]);
+      if(slrIdx >= 0) {
+        shippingCost = sellers[card.sellerIdx][slrIdx].shippingPrice || 0;
+        break;
+      }
+    }
+    
+    // Calculate subtotal and total
+    const subtotal = s[3];
+    const totalWithShipping = (subtotal + shippingCost).toFixed(2);
+    
+    // Build seller summary div with shipping breakdown
+    const summaryHtml = `<div class="sellerSummary">
+      <div class="summaryItemLeft">
+        <span class="summaryLabel">Subtotal:</span> <span class="summaryValue">$${subtotal.toFixed(2)}</span>
+      </div>
+      <div class="summaryItemRight">
+        <span class="summaryLabel">Shipping:</span> <span class="summaryValue">$${shippingCost.toFixed(2)}</span>
+      </div>
+    </div>`;
+    
+    aggregation.innerHTML += `<div class="sellerHeader accordian" id=${s[0]}><div class=sellerName>${s[2]} <a target=_blank href="https://shop.tcgplayer.com/sellerfeedback/${s[4]}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a></div><div>${s[1]} / ${count}</div><div><svg xmlns="http://www.w3.org/2000/svg" height="12px" width="12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg> ${numInCart}</div><div>$${totalWithShipping}</div><div><button class=addToCartA sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx}>Add All</button></div></div>` + summaryHtml + tableHtml;
   }
 
 

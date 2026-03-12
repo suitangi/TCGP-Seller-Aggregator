@@ -261,6 +261,8 @@
       border-color: rgba(255,255,255,0.6);
     }
     
+    .sellerHeader.accordian + .sellerSummary,
+    .sellerHeader.accordian + .sellerSummary + table,
     .sellerHeader.accordian + table {
       display: none;
     }
@@ -690,6 +692,45 @@
     body.dark-mode .quantityInput:disabled {
       background: #1f2937;
       color: #6b7280;
+    }
+    
+    /* Seller Summary Styles */
+    .sellerSummary {
+      color: white;
+      padding: 10px 12px;
+      margin: 0 0 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 500;
+      border-radius: 0 0 8px 8px;
+    }
+    
+    .summaryItemLeft,
+    .summaryItemRight {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .summaryItemLeft {
+      flex: 0 0 auto;
+    }
+    
+    .summaryItemRight {
+      flex: 0 0 auto;
+    }
+    
+    .summaryLabel {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .summaryValue {
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffd700;
     }
   </style>
 </head>

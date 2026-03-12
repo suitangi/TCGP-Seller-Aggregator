@@ -24,11 +24,6 @@ async function addCard(id, name, isFoil, mana) {
     }
 
     const sellersPage = await response.json();
-    // Debug: Log first seller listing to check available fields
-    if(sellersPage.results && sellersPage.results[0] && sellersPage.results[0].results && sellersPage.results[0].results.length > 0) {
-      console.log('TCGPlayer API Response Sample - First Seller Listing:', 
-        JSON.stringify(sellersPage.results[0].results[0], null, 2));
-    }
     sellersAll.push(...sellersPage.results[0].results);
 
     pageTotal = sellersPage.results[0].totalResults;

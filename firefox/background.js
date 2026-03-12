@@ -16,11 +16,6 @@ function addCard(id, name, isFoil, mana) {
   xhttp.onloadend = function() {
     if(this.status === 200) {
       var sellersPage = JSON.parse(this.responseText);
-      // Debug: Log first seller listing to check available fields (only on first page)
-      if(sellerFilters.from === 0 && sellersPage.results && sellersPage.results[0] && sellersPage.results[0].results && sellersPage.results[0].results.length > 0) {
-        console.log('TCGPlayer API Response Sample - First Seller Listing:', 
-          JSON.stringify(sellersPage.results[0].results[0], null, 2));
-      }
       sellersAll.push(...sellersPage.results[0].results);
       pageTotal = sellersPage.results[0].totalResults;
       sellerFilters.from += 50;

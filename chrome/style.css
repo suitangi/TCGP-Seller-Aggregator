@@ -433,3 +433,57 @@ tbody tr:hover {
   min-width: 200px;
   margin-top: 15px;
 }
+
+/* === Seller Header (Aggregation) === */
+.sellerHeader {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px;
+  margin: 10px 0 0 0;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.sellerSummary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 10px 12px;
+  margin: 0 0 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  border-radius: 0 0 8px 8px;
+}
+
+.summaryItemLeft,
+.summaryItemRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summaryItemLeft {
+  flex: 0 0 auto;
+}
+
+.summaryItemRight {
+  flex: 0 0 auto;
+}
+
+.summaryLabel {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.summaryValue {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffd700;
+}
