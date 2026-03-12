@@ -28,8 +28,8 @@ function addCard(id, name, isFoil, mana) {
         sellersAll = sellersAll.filter(e => !e.directSeller && e.languageAbbreviation === 'EN' && e.condition !== "Damaged");
         sellersAll = sellersAll.filter((value, index, self) => self.findIndex(t => t.sellerId === value.sellerId) === index); //remove duplicates
         sellers.push(sellersAll);
-        // Store with isFoil boolean instead of *F* in name
-        cards.push({ id: id, name: name, isFoil: isFoil, mana: mana, sellerIdx: sellers.length - 1, inCart: false });
+        // Store with isFoil boolean instead of *F* in name, and default quantity of 1
+        cards.push({ id: id, name: name, isFoil: isFoil, mana: mana, sellerIdx: sellers.length - 1, inCart: false, quantity: 1 });
       }
     }
     else return 0;
@@ -58,8 +58,8 @@ function removeCard(id, isFoil) {
 }
 
 
-function cardCart(id, inOrOut) {
-  var card = cards.find(c => c.id === id);
+function cardCart(id, isFoil, inOrOut) {
+  var card = cards.find(c => c.id === id && c.isFoil === isFoil);
   if(card)
     card.inCart = inOrOut;
   return +!!card;
@@ -93,10 +93,10 @@ function contentMsg(request, sender, sendResponse) {
   if(request.msgType === 'addCard') res = addCard(_id, request.name, request.isFoil, request.mana);
   if(request.msgType === 'removeCard') res = removeCard(_id, request.isFoil);
   if(request.msgType === 'queryCard') res = queryCard(_id);
-  if(request.msgType === 'addCardToCart') { res = cardCart(_id, true); sellers[+request.sellerIdx][+request.sellerIdxIdx].inCart = true; }
+  if(request.msgType === 'addCardToCart') { res = cardCart(_id, request.isFoil, true); sellers[+request.sellerIdx][+request.sellerIdxIdx].inCart = true; }
   if(request.msgType === 'removeCardFromCart') { res = cardCart(_id, false); const si = +request.sellerIdx; for(let i = 0; i < sellers[si].length; i++) sellers[si][i].inCart = false; }
   if(request.msgType === 'toggleInCart') {
-    var card = cards.find(c => c.id === _id);
+    var card = cards.find(c => c.id === _id && c.isFoil === request.isFoil);
     if(card) {
       card.inCart = !card.inCart;
       res = 1;
@@ -106,6 +106,13 @@ function contentMsg(request, sender, sendResponse) {
     var card = cards.find(c => c.id === _id);
     if(card) {
       card.name = request.name;
+      res = 1;
+    }
+  }
+  if(request.msgType === 'updateQuantity') {
+    var card = cards.find(c => c.id === _id && c.isFoil === request.isFoil);
+    if(card) {
+      card.quantity = request.quantity;
       res = 1;
     }
   }

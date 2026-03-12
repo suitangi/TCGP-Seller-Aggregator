@@ -37,8 +37,8 @@ async function addCard(id, name, isFoil, mana) {
   sellersAll = sellersAll.filter((value, index, self) => self.findIndex(t => t.sellerId === value.sellerId) === index);
   sellers.push(sellersAll);
 
-  // Store with isFoil boolean instead of *F* in name
-  cards.push({ id: id, name: name, isFoil: isFoil, mana: mana, sellerIdx: sellers.length - 1, inCart: false });
+  // Store with isFoil boolean and quantity (default 1)
+  cards.push({ id: id, name: name, isFoil: isFoil, mana: mana, sellerIdx: sellers.length - 1, inCart: false, quantity: 1 });
 
   await chrome.storage.local.set({cards: cards});
   await chrome.storage.local.set({sellers: sellers});
@@ -89,7 +89,7 @@ async function contentMsg(request) {
   if(request.msgType === 'addCardToCart') {
     const { cards = [] } = await chrome.storage.local.get('cards');
     const { sellers = [] } = await chrome.storage.local.get('sellers');
-    const card = cards.find(c => c.id === _id);
+    const card = cards.find(c => c.id === _id && c.isFoil === request.isFoil);
     if(card && sellers[+request.sellerIdx]) {
       card.inCart = true;
       sellers[+request.sellerIdx][+request.sellerIdxIdx].inCart = true;
@@ -100,7 +100,7 @@ async function contentMsg(request) {
   }
   if(request.msgType === 'toggleInCart') {
     const { cards = [] } = await chrome.storage.local.get('cards');
-    const card = cards.find(c => c.id === _id);
+    const card = cards.find(c => c.id === _id && c.isFoil === request.isFoil);
     if(card) {
       card.inCart = !card.inCart;
       await chrome.storage.local.set({cards: cards});
@@ -113,6 +113,16 @@ async function contentMsg(request) {
     const card = cards.find(c => c.id === _id);
     if(card) {
       card.name = request.name;
+      await chrome.storage.local.set({cards: cards});
+      return 1;
+    }
+    return 0;
+  }
+  if(request.msgType === 'updateQuantity') {
+    const { cards = [] } = await chrome.storage.local.get('cards');
+    const card = cards.find(c => c.id === _id && c.isFoil === request.isFoil);
+    if(card) {
+      card.quantity = request.quantity;
       await chrome.storage.local.set({cards: cards});
       return 1;
     }

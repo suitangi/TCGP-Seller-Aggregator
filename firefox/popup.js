@@ -35,6 +35,11 @@ function getCards() {
   browser.runtime.sendMessage({ msgType: 'getCards' }).then((result) => {
     cards = result || [];
     for(c of cards) {
+      // Initialize quantity if not set
+      if (typeof c.quantity === 'undefined') {
+        c.quantity = 1;
+      }
+      
       let row = cartTable.insertRow();
       let cell = row.insertCell();
       cell.innerHTML = c.mana;
@@ -47,17 +52,27 @@ function getCards() {
         cell.innerHTML = `<a target=_blank href="https://www.tcgplayer.com/product/${c.id}?Language=English">${displayName}</a>`;
       }
       cell = row.insertCell();
+      // Add quantity controls between name and cart indicator
+      cell.innerHTML = `
+        <div class="quantityControls" data-card-id="${c.id}" data-is-foil="${c.isFoil ? 'true' : 'false'}">
+          <button class="quantityBtn quantityDecrease" title="Decrease quantity">−</button>
+          <input type="number" class="quantityInput quantityNumber" value="${c.quantity}" min="0" max="999">
+          <button class="quantityBtn quantityIncrease" title="Increase quantity">+</button>
+        </div>
+      `;
+      cell = row.insertCell();
       if(c.inCart)
-        cell.innerHTML = '<svg class="inCartIcon" cardid="' + c.id + '" xmlns="http://www.w3.org/2000/svg" height="18px" width="18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>';
+        cell.innerHTML = '<svg class="inCartIcon" cardid="' + c.id + '" data-is-foil="' + (c.isFoil ? 'true' : 'false') + '" xmlns="http://www.w3.org/2000/svg" height="18px" width="18px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>';
       cell = row.insertCell();
       // Create action buttons cell
+      var menuId = 'menu-' + c.id + '-' + (c.isFoil ? 'foil' : 'normal');
       cell.innerHTML = `
         <div class="cardActions">
-          <button class="cardMenuBtn" cardid="${c.id}" title="Options">⋮</button>
-          <button class="cardRemove" cardid="${c.id}" title="Remove">×</button>
+          <button class="cardMenuBtn" cardid="${c.id}" data-is-foil="${c.isFoil ? 'true' : 'false'}" data-menu-id="${menuId}" title="Options">⋮</button>
+          <button class="cardRemove" cardid="${c.id}" data-is-foil="${c.isFoil ? 'true' : 'false'}" title="Remove">×</button>
         </div>
-        <div class="cardMenuDropdown" id="menu-${c.id}" style="display: none;">
-          <button class="menuToggleInCart" cardid="${c.id}">${c.inCart ? 'Remove TCGPlayer Cart Indicator' : 'Indicate as in TCGPlayer Cart'}</button>
+        <div class="cardMenuDropdown" id="${menuId}" style="display: none;">
+          <button class="menuToggleInCart" cardid="${c.id}" data-is-foil="${c.isFoil ? 'true' : 'false'}">${c.inCart ? 'Remove TCGPlayer Cart Indicator' : 'Indicate as in TCGPlayer Cart'}</button>
         </div>
       `;
     }
@@ -73,18 +88,31 @@ function getCards() {
     var z = document.getElementsByClassName('menuToggleInCart'); //toggle in cart listeners
     for(zc of z)
       zc.addEventListener('click', toggleInCart);
+    
+    // Add quantity control event listeners
+    var decreaseBtns = document.getElementsByClassName('quantityDecrease');
+    for(btn of decreaseBtns)
+      btn.addEventListener('click', decreaseQuantity);
+    
+    var increaseBtns = document.getElementsByClassName('quantityIncrease');
+    for(btn of increaseBtns)
+      btn.addEventListener('click', increaseQuantity);
+    
+    var quantityInputs = document.getElementsByClassName('quantityNumber');
+    for(input of quantityInputs)
+      input.addEventListener('change', updateQuantityFromInput);
   });
 }
 
 
 function toggleMenu(e) {
   e.stopPropagation();
-  var cardid = this.getAttribute('cardid');
-  var menu = document.getElementById('menu-' + cardid);
+  var menuId = this.getAttribute('data-menu-id');
+  var menu = document.getElementById(menuId);
   
   // Close all other menus
   document.querySelectorAll('.cardMenuDropdown').forEach(function(dropdown) {
-    if (dropdown.id !== 'menu-' + cardid) {
+    if (dropdown.id !== menuId) {
       dropdown.style.display = 'none';
     }
   });
@@ -97,16 +125,19 @@ function toggleMenu(e) {
 function toggleInCart(e) {
   e.stopPropagation();
   var cardid = +this.getAttribute('cardid');
-  var card = cards.find(c => c.id === cardid);
+  var isFoil = this.getAttribute('data-is-foil') === 'true';
+  var card = cards.find(c => c.id === cardid && c.isFoil === isFoil);
   if(card) {
     card.inCart = !card.inCart;
     browser.runtime.sendMessage({ 
       msgType: 'toggleInCart', 
-      id: cardid 
+      id: cardid,
+      isFoil: isFoil
+    }).then(() => {
+      // Re-render cart after storage is updated
+      cartTable.innerHTML = '';
+      getCards();
     });
-    // Re-render cart
-    cartTable.innerHTML = '';
-    getCards();
   }
 }
 
@@ -119,13 +150,92 @@ document.addEventListener('click', function() {
 });
 
 
+function decreaseQuantity() {
+  var controls = this.closest('.quantityControls');
+  var cardId = +controls.getAttribute('data-card-id');
+  var isFoil = controls.getAttribute('data-is-foil') === 'true';
+  var input = controls.querySelector('.quantityNumber');
+  var currentQuantity = parseInt(input.value);
+  
+  if (currentQuantity > 0) {
+    var newQuantity = currentQuantity - 1;
+    input.value = newQuantity;
+    updateCardQuantity(cardId, isFoil, newQuantity);
+  }
+}
+
+
+function increaseQuantity() {
+  var controls = this.closest('.quantityControls');
+  var cardId = +controls.getAttribute('data-card-id');
+  var isFoil = controls.getAttribute('data-is-foil') === 'true';
+  var input = controls.querySelector('.quantityNumber');
+  var currentQuantity = parseInt(input.value);
+  
+  if (currentQuantity < 999) {
+    var newQuantity = currentQuantity + 1;
+    input.value = newQuantity;
+    updateCardQuantity(cardId, isFoil, newQuantity);
+  }
+}
+
+
+function updateQuantityFromInput() {
+  var controls = this.closest('.quantityControls');
+  var cardId = +controls.getAttribute('data-card-id');
+  var isFoil = controls.getAttribute('data-is-foil') === 'true';
+  var newQuantity = parseInt(this.value);
+  
+  // Validate input
+  if (isNaN(newQuantity) || newQuantity < 0) {
+    newQuantity = 0;
+  } else if (newQuantity > 999) {
+    newQuantity = 999;
+  }
+  
+  this.value = newQuantity;
+  updateCardQuantity(cardId, isFoil, newQuantity);
+}
+
+
+function updateCardQuantity(cardId, isFoil, quantity) {
+  var card = cards.find(c => c.id === cardId && c.isFoil === isFoil);
+  if (card) {
+    card.quantity = quantity;
+    // Remove card if quantity is 0
+    if (quantity === 0) {
+      browser.runtime.sendMessage({ msgType: 'removeCard', id: cardId, isFoil: isFoil }).then(() => {
+        cards = cards.filter(c => !(c.id === cardId && c.isFoil === isFoil));
+        cartTable.innerHTML = '';
+        getCards();
+      });
+    } else {
+      // Update quantity in storage
+      browser.runtime.sendMessage({ 
+        msgType: 'updateQuantity', 
+        id: cardId, 
+        isFoil: isFoil, 
+        quantity: quantity 
+      }).then(() => {
+        // If we're on the aggregation page, re-run aggregation to reflect quantity changes
+        if(cart.style.display === 'none' && aggBtn.style.display === 'none') {
+          // Re-run aggregation with fresh data
+          aggregate();
+        }
+      });
+    }
+  }
+}
+
+
 async function removeCard() {
   var id = +this.getAttribute('cardid');
-  var card = cards.find(c => c.id === id);
+  var isFoil = this.getAttribute('data-is-foil') === 'true';
+  var card = cards.find(c => c.id === id && c.isFoil === isFoil);
   if(!card) return;
   
-  await browser.runtime.sendMessage({ msgType: 'removeCard', id: id, isFoil: card.isFoil });
-  cards = cards.filter(c => !(c.id === id && c.isFoil === card.isFoil));
+  await browser.runtime.sendMessage({ msgType: 'removeCard', id: id, isFoil: isFoil });
+  cards = cards.filter(c => !(c.id === id && c.isFoil === isFoil));
   // Re-render cart to ensure consistent state
   cartTable.innerHTML = '';
   getCards();
@@ -171,7 +281,10 @@ function aggregate3(_sellers) {
   var count = 0, maxAggregation = 0, sellerTotals = [];
 
   // Check if we have enough cards for aggregation (minimum 3 available cards)
+  // Count based on quantity, not just card count
   var availableCards = cards.filter(c => !c.inCart);
+  var totalQuantity = availableCards.reduce((sum, c) => sum + (c.quantity || 1), 0);
+  
   if(availableCards.length < 3) {
     aggregation.innerHTML = `
       <div class="infoMessage">
@@ -193,25 +306,27 @@ function aggregate3(_sellers) {
   aggBtn.onclick = aggregate;
 
   for(card of cards) { //max aggregation & min cost
-   if(card.inCart) continue;
-    count += 1;
+    if(card.inCart) continue;
+    count += (card.quantity || 1);
     let minCost = Number.MAX_VALUE;
     let maxCardsPerSeller = 1;
     for(s of sellers[card.sellerIdx]) {
       minCost = (s.price < minCost) ? s.price : minCost;
+      // Only count up to available quantity, not needed quantity
+      let availableCount = Math.min(card.quantity || 1, s.quantity);
       let slr = sellerTotals.find((e) => e[0] === s.sellerId);
       if(slr) {
-        slr[1] += 1;
+        slr[1] += availableCount;
         maxCardsPerSeller = (maxCardsPerSeller < slr[1]) ? slr[1] : maxCardsPerSeller;
       }
       else
-        sellerTotals.push([s.sellerId, 1, s.sellerName, 0.0, s.sellerKey]); //magic numbers: maxAggregation, seller total package Price
+        sellerTotals.push([s.sellerId, availableCount, s.sellerName, 0.0, s.sellerKey]); //magic numbers: totalQuantity, seller total package Price
     }
     maxAggregation = (maxAggregation < maxCardsPerSeller) ? maxCardsPerSeller : maxAggregation;
     card.minCost = (minCost === Number.MAX_VALUE) ? '-' : '$' + minCost;
   }
 
-  maxAggregation = (maxAggregation < 3) ? 3 : maxAggregation; //omit sellers with 1 card
+  maxAggregation = (maxAggregation < 3) ? 3 : maxAggregation; //omit sellers with less than 3 cards
 
   sellerTotals = sellerTotals.filter(s => s[1] > maxAggregation - 2); //filter sellers
 
@@ -222,12 +337,14 @@ function aggregate3(_sellers) {
       let slr = sellers[card.sellerIdx].find((sel) => sel.sellerId === s[0]);
       if(!slr) continue;
       minCost = (slr.price < minCost) ? slr.price : minCost; //min cost shown
-      s[3] += slr.price; //package total price
+      // Only charge for available quantity, not needed quantity
+      let availableCount = Math.min(card.quantity || 1, slr.quantity);
+      s[3] += slr.price * availableCount; //package total price (multiply by available quantity)
     }
     card.minCostShown = (minCost === Number.MAX_VALUE) ? '-' : '$' + minCost;
   }
 
-  sellerTotals.sort((a, b) => {return ((b[1] - a[1]) || (a[3] - b[3]));}); //sort by num of cards, total package price
+  sellerTotals.sort((a, b) => {return ((b[1] - a[1]) || (a[3] - b[3]));}); //sort by total quantity, total package price
 
   for(s of sellerTotals) { //render loop. sellers
     let price, slrIdx, numInCart = 0, htmlStr = '';
@@ -240,14 +357,25 @@ function aggregate3(_sellers) {
       // Use isFoil boolean for display
       let displayName = card.name;
       let foilTag = card.isFoil ? '<span class="foilTag">Foil</span>' : '';
-      // Get quantity from seller data
-      let quantity = slrIdx >= 0 ? sellers[card.sellerIdx][slrIdx].quantity : '-';
+      // Get quantity from seller data and check stock status
+      let availableQuantity = slrIdx >= 0 ? sellers[card.sellerIdx][slrIdx].quantity : '-';
+      let neededQuantity = card.quantity || 1;
+      let stockStatus = '';
+      
+      if(price !== '-' && availableQuantity !== '-') {
+        if(availableQuantity < neededQuantity) {
+          stockStatus = `<span style="color: #dc3545; font-size: 11px; font-weight: 600;">(${availableQuantity}/${neededQuantity} in stock)</span>`;
+        } else {
+          stockStatus = `<span style="color: #28a745; font-size: 11px;">✓ ${availableQuantity} in stock</span>`;
+        }
+      }
+      
       if(price !== '-')
-        htmlStr += `<tr><td>${displayName}${foilTag}</td><td>${card.minCost}</td><td>${card.minCostShown}</td><td>${price}</td><td>${quantity}</td><td><button class=addToCartX sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx} title="Add to Cart">
+        htmlStr += `<tr><td>${displayName}${foilTag}</td><td>${card.minCost}</td><td>${card.minCostShown}</td><td>${price}</td><td>${availableQuantity}</td><td>${stockStatus}</td><td><button class=addToCartX sellerIdx=${card.sellerIdx} sellerIdxIdx=${slrIdx} title="Add to Cart">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
         </button></td></tr>`;
       else
-        htmlStr += '<tr><td>' + displayName + foilTag + '</td><td>-</td><td>-</td><td>-</td><td>-</td><td style="color:#999;">Unavailable</td></tr>';
+        htmlStr += '<tr><td>' + displayName + foilTag + '</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td style="color:#999;">Unavailable</td></tr>';
     }
     
     // Add column headers for price columns
@@ -259,7 +387,8 @@ function aggregate3(_sellers) {
             <th title="Minimum price across all sellers">Min Price</th>
             <th title="Minimum price from sellers in this aggregation">Min in List</th>
             <th title="Price from this specific seller">Seller Price</th>
-            <th title="Available stock quantity">Qty</th>
+            <th title="Available stock quantity">Stock</th>
+            <th title="Stock status relative to needed quantity">Status</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -294,7 +423,8 @@ function addAllToCart() {
 function addToCart(btn, addAll=false) {
   var elem = btn.target || btn;
   var sellerIdx = +elem.getAttribute('sellerIdx');
-  var seller = sellers[sellerIdx][+elem.getAttribute('sellerIdxIdx')];
+  var sellerIdxIdx = +elem.getAttribute('sellerIdxIdx');
+  var seller = sellers[sellerIdx][sellerIdxIdx];
   var req = {sku: seller.productConditionId, sellerKey: seller.sellerKey, channelId: 0, requestedQuantity: 1, price: seller.price, isDirect: false, countryCode: "US"};
 
   var xhttp = new XMLHttpRequest();
@@ -304,14 +434,17 @@ function addToCart(btn, addAll=false) {
       elem.parentElement.style.color = '#1d1';
       elem.parentElement.innerHTML = 'In Cart';
       refreshBtn.style.display = 'block';
+      // Find the card that has this seller
+      var card = cards.find(e => e.sellerIdx === sellerIdx && sellers[sellerIdx][sellerIdxIdx].productConditionId === seller.productConditionId);
       if(card) {
         card.inCart = true;
         seller.inCart = true;
         browser.runtime.sendMessage({ 
           msgType: 'addCardToCart', 
           id: card.id, 
+          isFoil: card.isFoil,
           sellerIdx: sellerIdx, 
-          sellerIdxIdx: +elem.getAttribute('sellerIdxIdx') 
+          sellerIdxIdx: sellerIdxIdx 
         });
       }
     }
@@ -322,7 +455,6 @@ function addToCart(btn, addAll=false) {
   xhttp.setRequestHeader('Content-Type', 'application/json');
   xhttp.send(JSON.stringify(req));
   semaphore += 1;
-  var card = cards.find(e => e.sellerIdx === sellerIdx);
 }
 
 

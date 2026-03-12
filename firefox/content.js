@@ -1,5 +1,6 @@
 var btnBox, id, path, timerId;
 var div = document.createElement("div");
+var operationInProgress = false;
 loadCheck();
 browser.runtime.onMessage.addListener(loadCheck);
 
@@ -31,42 +32,29 @@ function addCard(isFoil) {
         manaStr += m.outerHTML;
   }
   
-  // Optimistic UI update
-  queryCard();
+  // Show loading state - single loading indicator for both buttons
+  div.innerHTML = '<div class="loading-indicator">Loading...</div>';
   
+  // Send to background script first, then query actual state
   browser.runtime.sendMessage({ msgType: 'addCard', name: cardName, id: id, isFoil: isFoil, mana: manaStr })
   .then(message => {
-    if(message === 2) {
-      // Card already exists - refresh to show current state
-      queryCard();
-    } else if(message !== 1) {
-      // Error - show error message
-      var errorHtml = 'Error adding card<br>' + message + '<br>';
-      errorHtml += '<button id="TCGPSellerAgg-add" class="TCGPSellerAggBtn" type=button>Add Non-foil</button> ';
-      errorHtml += '<button id="TCGPSellerAgg-foil" class="TCGPSellerAggBtn" type=button>Add Foil</button>';
-      div.innerHTML = errorHtml;
-      attachEventListeners();
-    }
+    // Wait a bit for async operation to complete, then query state
+    // Use retry mechanism to ensure we get the updated state
+    setTimeout(() => queryCardWithRetry(isFoil, true), 100);
   }, handleError);
 }
 
 
 function removeCard(isFoil) {
-  // Optimistic UI update
-  queryCard();
+  // Show loading state - single loading indicator for both buttons
+  div.innerHTML = '<div class="loading-indicator">Loading...</div>';
   
+  // Send to background script first, then query actual state
   browser.runtime.sendMessage({ msgType: 'removeCard', id: id, isFoil: isFoil })
   .then(message => {
-    if(message === 0) {
-      var errorHtml = 'Card not found in vCart<br>';
-      errorHtml += '<button id="TCGPSellerAgg-add" class="TCGPSellerAggBtn" type=button>Add Non-foil</button> ';
-      errorHtml += '<button id="TCGPSellerAgg-foil" class="TCGPSellerAggBtn" type=button>Add Foil</button>';
-      div.innerHTML = errorHtml;
-      attachEventListeners();
-    } else if(message !== 1) {
-      div.innerHTML = 'Error removing card<br>';
-      attachEventListeners();
-    }
+    // Wait a bit for async operation to complete, then query state
+    // Use retry mechanism to ensure we get the updated state
+    setTimeout(() => queryCardWithRetry(isFoil, false), 100);
   }, handleError);
 }
 
@@ -81,13 +69,13 @@ function queryCard() {
     var html = '';
     
     if(nonFoilInCart) {
-      html += '<button id="TCGPSellerAgg-remove" class="TCGPSellerAggBtn" type=button>Remove Non-foil</button> ';
+      html += '<button id="TCGPSellerAgg-remove" class="TCGPSellerAggBtnRemove" type=button>Remove Non-foil</button> ';
     } else {
       html += '<button id="TCGPSellerAgg-add" class="TCGPSellerAggBtn" type=button>Add Non-foil</button> ';
     }
     
     if(foilInCart) {
-      html += '<button id="TCGPSellerAgg-removeFoil" class="TCGPSellerAggBtn" type=button>Remove Foil</button>';
+      html += '<button id="TCGPSellerAgg-removeFoil" class="TCGPSellerAggBtnRemove" type=button>Remove Foil</button>';
     } else {
       html += '<button id="TCGPSellerAgg-foil" class="TCGPSellerAggBtn" type=button>Add Foil</button>';
     }
@@ -111,8 +99,31 @@ function attachEventListeners() {
 }
 
 
+function queryCardWithRetry(expectedIsFoil, expectedInCart, retryCount = 0) {
+  browser.runtime.sendMessage({ msgType: 'queryCard', id: id })
+  .then(result => {
+    var nonFoilInCart = result.nonFoil;
+    var foilInCart = result.foil;
+    
+    // Check if the state matches what we expect
+    var actualState = expectedIsFoil ? foilInCart : nonFoilInCart;
+    
+    // If state doesn't match and we haven't exceeded retries, try again
+    if(actualState !== expectedInCart && retryCount < 10) {
+      setTimeout(() => queryCardWithRetry(expectedIsFoil, expectedInCart, retryCount + 1), 100);
+      return;
+    }
+    
+    // State matches or we've exhausted retries - update UI
+    queryCard();
+  }, handleError);
+}
+
+
 function handleError(error) {
   console.log(`Error: ${error}`);
+  // Reset to show buttons on error
+  queryCard();
 }
 
 
