@@ -344,7 +344,40 @@ function aggregate3(_sellers) {
     card.minCostShown = (minCost === Number.MAX_VALUE) ? '-' : '$' + minCost;
   }
 
-  sellerTotals.sort((a, b) => {return ((b[1] - a[1]) || (a[3] - b[3]));}); //sort by total quantity, total package price
+  // Calculate shipping cost for each seller (needed for sorting)
+  for(s of sellerTotals) {
+    let shippingCost = 0;
+    let sellerShippingPrice = 0;
+    for(card of cards) {
+      if(card.inCart) continue;
+      let slrIdx = sellers[card.sellerIdx].findIndex((sel) => sel.sellerId === s[0]);
+      if(slrIdx >= 0) {
+        shippingCost = sellers[card.sellerIdx][slrIdx].shippingPrice || 0;
+        sellerShippingPrice = sellers[card.sellerIdx][slrIdx].sellerShippingPrice || 0;
+        break;
+      }
+    }
+    // Store shipping cost in s[5] for later use
+    s[5] = shippingCost;
+    s[6] = sellerShippingPrice; // Store sellerShippingPolicy for free shipping check
+    
+    // Check for free shipping policy: if sellerShippingPrice is 0 and subtotal >= $5, shipping is free
+    if (sellerShippingPrice === 0 && s[3] >= 5) {
+      s[5] = 0;
+    }
+  }
+
+  // Sort by cards available/wanted ratio (descending), then by total with shipping (ascending)
+  sellerTotals.sort((a, b) => {
+    const ratioA = a[1] / count; // cards available / cards wanted
+    const ratioB = b[1] / count;
+    const ratioDiff = ratioB - ratioA;
+    if (ratioDiff !== 0) return ratioDiff;
+    // Sort by total with shipping (subtotal + potentially free shipping)
+    const totalA = a[3] + a[5];
+    const totalB = b[3] + b[5];
+    return totalA - totalB;
+  });
 
   for(s of sellerTotals) { //render loop. sellers
     let price, slrIdx, numInCart = 0, htmlStr = '';
@@ -396,17 +429,25 @@ function aggregate3(_sellers) {
     
     // Calculate shipping cost from first available listing for this seller
     let shippingCost = 0;
+    let sellerShippingPrice = 0;
     for(card of cards) {
       if(card.inCart) continue;
       let slrIdx = sellers[card.sellerIdx].findIndex((sel) => sel.sellerId === s[0]);
       if(slrIdx >= 0) {
         shippingCost = sellers[card.sellerIdx][slrIdx].shippingPrice || 0;
+        sellerShippingPrice = sellers[card.sellerIdx][slrIdx].sellerShippingPrice || 0;
         break;
       }
     }
     
     // Calculate subtotal and total
     const subtotal = s[3];
+    
+    // Check for free shipping policy: if sellerShippingPrice is 0 and subtotal >= $5, shipping is free
+    if (sellerShippingPrice === 0 && subtotal >= 5) {
+      shippingCost = 0;
+    }
+    
     const totalWithShipping = (subtotal + shippingCost).toFixed(2);
     
     // Build seller summary div with shipping breakdown

@@ -26,7 +26,7 @@ npm-debug.log*
 
 # Temporary files
 *.tmp
-*.temp
 
-# Package lock file (optional - uncomment if you don't want to commit it)
-# package-lock.json
+
+# Ignore directory
+ignore/
