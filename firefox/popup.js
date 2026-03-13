@@ -248,7 +248,8 @@ function showCart() {
   cart.style.display = 'block';
   cartTable.innerHTML = ''; // Clear cart table
   refreshBtn.style.display = 'none';
-  aggBtn.style.display = 'block';
+  const buttonContainer = document.getElementById('buttonContainer');
+  buttonContainer.style.display = 'flex';
   aggBtn.textContent = 'Aggregate Sellers';
   aggBtn.onclick = aggregate;
   
@@ -276,7 +277,8 @@ function aggregate3(_sellers) {
   
   cart.style.display = 'none';
   refreshBtn.style.display = 'none';
-  aggBtn.style.display = 'none';
+  const buttonContainer = document.getElementById('buttonContainer');
+  buttonContainer.style.display = 'none';
   aggregation.innerHTML = '';
   var count = 0, maxAggregation = 0, sellerTotals = [];
 
@@ -295,9 +297,7 @@ function aggregate3(_sellers) {
         The aggregation algorithm needs multiple cards to identify best combination of sellers that minimizes shipping costs. With fewer cards, each card is typically best purchased from different sellers, making aggregation unnecessary.
       </div>
     `;
-    aggBtn.style.display = 'block';
-    aggBtn.textContent = '← Back to Cart';
-    aggBtn.onclick = showCart;
+    buttonContainer.style.display = 'flex';
     return;
   }
   
@@ -549,5 +549,468 @@ function handleError(message) {
   console.log('popup error', message);
 }
 
+
+// Set Cover Optimization Algorithm
+function optimizeCart() {
+  browser.runtime.sendMessage({ msgType: 'aggregate' }).then((result) => {
+    sellers = result || [];
+    optimizeCartWithSolvers(sellers);
+  });
+}
+
+
+function optimizeCartWithSolvers(_sellers) {
+  if(!(_sellers instanceof Event)) sellers = _sellers;
+  
+  // Show back button on optimization page
+  backBtn.style.display = 'block';
+  
+  cart.style.display = 'none';
+  refreshBtn.style.display = 'none';
+  const buttonContainer = document.getElementById('buttonContainer');
+  buttonContainer.style.display = 'none';
+  aggregation.innerHTML = '';
+
+  // Get cards that are not already in cart
+  const availableCards = cards.filter(c => !c.inCart);
+  
+  if (availableCards.length < 1) {
+    aggregation.innerHTML = `
+      <div class="infoMessage">
+        <span class="icon">✅</span>
+        <strong>All Cards Already in Cart</strong>
+        All your cards are already marked as in your TCGPlayer cart.<br><br>
+        Add more cards to your virtual cart to see optimization results.
+      </div>
+    `;
+    buttonContainer.style.display = 'flex';
+    return;
+  }
+  
+  // Run the set cover optimization
+  const optimizationResult = solveSetCover(availableCards, sellers);
+  
+  if (!optimizationResult.success) {
+    aggregation.innerHTML = `
+      <div class="infoMessage">
+        <span class="icon">❌</span>
+        <strong>No Optimal Solution Found</strong>
+        ${optimizationResult.message}<br><br>
+        This could be due to insufficient stock or no available sellers for some cards.
+      </div>
+    `;
+    buttonContainer.style.display = 'flex';
+    return;
+  }
+  
+  // Display the optimized results
+  displayOptimizedResults(optimizationResult);
+}
+
+
+function solveSetCover(availableCards, sellers) {
+  // Prepare the problem data
+  const cardRequests = [];
+  
+  // Create a list of card requests with quantities
+  for (const card of availableCards) {
+    for (let i = 0; i < (card.quantity || 1); i++) {
+      cardRequests.push({
+        cardId: card.id,
+        isFoil: card.isFoil,
+        name: card.name,
+        mana: card.mana,
+        sellerIdx: card.sellerIdx,
+        requestIndex: i
+      });
+    }
+  }
+  
+  if (cardRequests.length === 0) {
+    return { success: false, message: "No cards to optimize." };
+  }
+  
+  // Get all available seller options for each card
+  const sellerOptions = [];
+  
+  for (const request of cardRequests) {
+    const cardSellers = sellers[request.sellerIdx] || [];
+    
+    for (let sellerIdx = 0; sellerIdx < cardSellers.length; sellerIdx++) {
+      const seller = cardSellers[sellerIdx];
+      if (seller.quantity > 0 && !seller.inCart) {
+        sellerOptions.push({
+          sellerId: seller.sellerId,
+          sellerName: seller.sellerName,
+          sellerKey: seller.sellerKey,
+          price: seller.price,
+          shippingPrice: seller.shippingPrice || 0,
+          sellerShippingPrice: seller.sellerShippingPrice || 0,
+          cardRequest: request,
+          originalSellerIdx: request.sellerIdx,
+          originalSellerIdxIdx: sellerIdx,
+          productConditionId: seller.productConditionId
+        });
+      }
+    }
+  }
+  
+  if (sellerOptions.length === 0) {
+    return { success: false, message: "No sellers available for these cards." };
+  }
+  
+  // Use a greedy approach with cost-effectiveness heuristic
+  const result = greedySetCoverSolver(cardRequests, sellerOptions);
+  
+  if (!result.success) {
+    return result;
+  }
+  
+  // Calculate final costs and shipping
+  return calculateFinalCosts(result.solution);
+}
+
+
+function greedySetCoverSolver(cardRequests, sellerOptions) {
+  const uncoveredRequests = new Set(cardRequests.map((_, idx) => idx));
+  const selectedSellers = new Map(); // sellerId -> seller info
+  const assignments = []; // Track which seller covers which card request
+  
+  while (uncoveredRequests.size > 0) {
+    let bestOption = null;
+    let bestCostEffectiveness = Infinity;
+    let bestCoveredRequests = [];
+    
+    // Group seller options by seller
+    const sellerGroups = new Map();
+    for (const option of sellerOptions) {
+      if (!sellerGroups.has(option.sellerId)) {
+        sellerGroups.set(option.sellerId, []);
+      }
+      sellerGroups.get(option.sellerId).push(option);
+    }
+    
+    // Evaluate each seller
+    for (const [sellerId, options] of sellerGroups.entries()) {
+      // Find which uncovered requests this seller can fulfill
+      const coveredRequestIndices = [];
+      const sellerAssignments = [];
+      
+      for (const option of options) {
+        for (const requestIdx of uncoveredRequests) {
+          const request = cardRequests[requestIdx];
+          if (request.cardId === option.cardRequest.cardId && 
+              request.isFoil === option.cardRequest.isFoil &&
+              request.requestIndex === option.cardRequest.requestIndex) {
+            coveredRequestIndices.push(requestIdx);
+            sellerAssignments.push({
+              requestIndex: requestIdx,
+              option: option
+            });
+            break; // Each option can only cover one request
+          }
+        }
+      }
+      
+      if (coveredRequestIndices.length === 0) continue;
+      
+      // Calculate cost for this seller
+      const subtotal = sellerAssignments.reduce((sum, assignment) => sum + assignment.option.price, 0);
+      
+      // Get shipping cost (use the first option's shipping info since it's per seller)
+      let shippingCost = options[0].shippingPrice;
+      const sellerShippingPrice = options[0].sellerShippingPrice;
+      
+      // Apply free shipping policy: if sellerShippingPrice is 0 and subtotal >= $5, shipping is free
+      if (sellerShippingPrice === 0 && subtotal >= 5) {
+        shippingCost = 0;
+      }
+      
+      const totalCost = subtotal + shippingCost;
+      const costEffectiveness = totalCost / coveredRequestIndices.length;
+      
+      if (costEffectiveness < bestCostEffectiveness) {
+        bestCostEffectiveness = costEffectiveness;
+        bestOption = {
+          sellerId: sellerId,
+          sellerName: options[0].sellerName,
+          sellerKey: options[0].sellerKey,
+          subtotal: subtotal,
+          shippingCost: shippingCost,
+          totalCost: totalCost,
+          assignments: sellerAssignments
+        };
+        bestCoveredRequests = coveredRequestIndices;
+      }
+    }
+    
+    if (!bestOption) {
+      return {
+        success: false,
+        message: "Cannot find sellers for some cards. Some cards may be out of stock."
+      };
+    }
+    
+    // Select this seller
+    selectedSellers.set(bestOption.sellerId, bestOption);
+    assignments.push(...bestOption.assignments);
+    
+    // Remove covered requests
+    for (const requestIdx of bestCoveredRequests) {
+      uncoveredRequests.delete(requestIdx);
+    }
+  }
+  
+  return {
+    success: true,
+    solution: {
+      sellers: selectedSellers,
+      assignments: assignments,
+      cardRequests: cardRequests
+    }
+  };
+}
+
+
+function calculateFinalCosts(solution) {
+  const { sellers, assignments, cardRequests } = solution;
+  
+  const sellerDetails = [];
+  let grandTotal = 0;
+  let totalShipping = 0;
+  let totalSubtotal = 0;
+  
+  for (const [sellerId, sellerInfo] of sellers.entries()) {
+    const sellerAssignments = assignments.filter(a => a.option.sellerId === sellerId);
+    
+    // Group assignments by card to get quantities
+    const cardQuantities = new Map();
+    for (const assignment of sellerAssignments) {
+      const key = `${assignment.option.cardRequest.cardId}_${assignment.option.cardRequest.isFoil}`;
+      const cardInfo = assignment.option.cardRequest;
+      
+      if (!cardQuantities.has(key)) {
+        cardQuantities.set(key, {
+          card: cardInfo,
+          quantity: 0,
+          price: assignment.option.price,
+          option: assignment.option
+        });
+      }
+      cardQuantities.get(key).quantity++;
+    }
+    
+    const cards = Array.from(cardQuantities.values());
+    const subtotal = cards.reduce((sum, card) => sum + (card.price * card.quantity), 0);
+    
+    const sellerDetails_entry = {
+      sellerId: sellerId,
+      sellerName: sellerInfo.sellerName,
+      sellerKey: sellerInfo.sellerKey,
+      cards: cards,
+      subtotal: subtotal,
+      shippingCost: sellerInfo.shippingCost,
+      totalCost: sellerInfo.totalCost
+    };
+    
+    sellerDetails.push(sellerDetails_entry);
+    grandTotal += sellerInfo.totalCost;
+    totalShipping += sellerInfo.shippingCost;
+    totalSubtotal += subtotal;
+  }
+  
+  return {
+    success: true,
+    sellers: sellerDetails,
+    totals: {
+      subtotal: totalSubtotal,
+      shipping: totalShipping,
+      total: grandTotal
+    },
+    assignments: assignments
+  };
+}
+
+
+function displayOptimizedResults(optimizationResult) {
+  const { sellers, totals } = optimizationResult;
+  
+  aggregation.innerHTML = `
+    <div class="optimizedHeader">
+      <h3>Optimized Cart - Minimum Cost Solution</h3>
+      <div class="optimizedSummary">
+        <div class="summaryRow">
+          <span>Subtotal: $${totals.subtotal.toFixed(2)}</span>
+          <span>Shipping: $${totals.shipping.toFixed(2)}</span>
+          <span><strong>Total: $${totals.total.toFixed(2)}</strong></span>
+        </div>
+        <div class="summaryNote">This is the most cost-effective combination of sellers for all your cards</div>
+      </div>
+    </div>
+  `;
+  
+  // Add styles for the new optimized header
+  if (!document.getElementById('optimizedStyles')) {
+    const style = document.createElement('style');
+    style.id = 'optimizedStyles';
+    style.textContent = `
+      .optimizedHeader {
+        margin: 16px;
+        padding: 20px;
+        background: linear-gradient(135deg, #48d0b0 0%, #2d8e5d 100%);
+        color: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      }
+      
+      .optimizedHeader h3 {
+        margin: 0 0 16px 0;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      
+      .optimizedSummary .summaryRow {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 16px;
+      }
+      
+      .optimizedSummary .summaryNote {
+        font-size: 13px;
+        opacity: 0.9;
+        font-style: italic;
+      }
+      
+      body.dark-mode .optimizedHeader {
+        background: linear-gradient(135deg, #2d8e5d 0%, #1a5d3e 100%);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  
+  // Display each optimal seller
+  for (const seller of sellers) {
+    let htmlStr = '';
+    
+    for (const cardInfo of seller.cards) {
+      const card = cardInfo.card;
+      const option = cardInfo.option;
+      
+      // Use isFoil boolean for display
+      let displayName = card.name;
+      let foilTag = card.isFoil ? '<span class="foilTag">Foil</span>' : '';
+      
+      htmlStr += `<tr>
+        <td>${displayName}${foilTag}</td>
+        <td>$${option.price.toFixed(2)}</td>
+        <td>${cardInfo.quantity}</td>
+        <td>$${(option.price * cardInfo.quantity).toFixed(2)}</td>
+        <td><button class=addToCartX sellerIdx=${option.originalSellerIdx} sellerIdxIdx=${option.originalSellerIdxIdx} title="Add to Cart">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+        </button></td>
+      </tr>`;
+    }
+    
+    const tableHtml = `
+      <table>
+        <thead>
+          <tr>
+            <th>Card Name</th>
+            <th>Price Each</th>
+            <th>Quantity</th>
+            <th>Total</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>${htmlStr}</tbody>
+      </table>`;
+    
+    const summaryHtml = `<div class="sellerSummary">
+      <div class="summaryItemLeft">
+        <span class="summaryLabel">Subtotal:</span> <span class="summaryValue">$${seller.subtotal.toFixed(2)}</span>
+      </div>
+      <div class="summaryItemRight">
+        <span class="summaryLabel">Shipping:</span> <span class="summaryValue">$${seller.shippingCost.toFixed(2)}</span>
+      </div>
+    </div>`;
+    
+    // Calculate card count
+    const cardCount = seller.cards.reduce((sum, cardInfo) => sum + cardInfo.quantity, 0);
+    const inCartCount = 0; // For optimized results, nothing is in cart yet
+    
+    aggregation.innerHTML += `<div class="sellerHeader accordian" id=${seller.sellerId}>
+      <div class=sellerName>${seller.sellerName} 
+        <a target=_blank href="https://shop.tcgplayer.com/sellerfeedback/${seller.sellerKey}">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
+      </div>
+      <div>${cardCount} cards</div>
+      <div>
+        <svg xmlns="http://www.w3.org/2000/svg" height="12px" width="12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg> 
+        ${inCartCount}
+      </div>
+      <div>$${seller.totalCost.toFixed(2)}</div>
+      <div><button class=addToCartA data-seller-cards='${JSON.stringify(seller.cards.map(c => ({sellerIdx: c.option.originalSellerIdx, sellerIdxIdx: c.option.originalSellerIdxIdx})))}'>Add All</button></div>
+    </div>` + summaryHtml + tableHtml;
+  }
+  
+  // Add event listeners for the add to cart buttons
+  const sellerHeaders = aggregation.getElementsByClassName('sellerHeader');
+  if(sellerHeaders.length) sellerHeaders[0].classList.remove('accordian');
+  for(const header of sellerHeaders) {
+    header.addEventListener('click', e => {
+      e.target.classList.toggle('accordian'); 
+      e.target.parentElement.classList.toggle('accordian');
+    });
+  }
+  
+  const addToCartButtons = aggregation.getElementsByClassName('addToCartX');
+  for(const button of addToCartButtons) {
+    button.addEventListener('click', addToCart);
+  }
+  
+  const addAllButtons = aggregation.getElementsByClassName('addToCartA');
+  for(const button of addAllButtons) {
+    button.addEventListener('click', addAllOptimizedToCart);
+  }
+}
+
+
+function addAllOptimizedToCart() {
+  const sellerCards = JSON.parse(this.getAttribute('data-seller-cards'));
+  this.parentElement.parentElement.classList.remove('accordian');
+  
+  for (const cardData of sellerCards) {
+    const fakeButton = {
+      target: {
+        getAttribute: (attr) => {
+          if (attr === 'sellerIdx') return cardData.sellerIdx;
+          if (attr === 'sellerIdxIdx') return cardData.sellerIdxIdx;
+          return null;
+        },
+        parentElement: this.parentElement
+      }
+    };
+    addToCart(fakeButton, true);
+  }
+}
+
+
+function showCartFromOptimized() {
+  // Reset to cart view
+  const buttonContainer = document.getElementById('buttonContainer');
+  buttonContainer.style.display = 'flex';
+  showCart();
+}
+
+
 // Initialize aggregate button event listener
 aggBtn.onclick = aggregate;
+
+// Add event listener for the new optimized cart button
+const optimizedBtn = document.getElementById('optimizedBtn');
+if (optimizedBtn) {
+  optimizedBtn.onclick = optimizeCart;
+}
