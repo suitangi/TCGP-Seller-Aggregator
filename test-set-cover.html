@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Set Cover Algorithm Test Suite</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            margin: 20px; 
+            background: #1a1a1a; 
+            color: #00ff00;
+        }
+        .test-result { 
+            margin: 10px 0; 
+            padding: 10px; 
+            border-radius: 5px;
+        }
+        .pass { 
+            background: #0d4a0d; 
+            border: 1px solid #00ff00;
+        }
+        .fail { 
+            background: #4a0d0d; 
+            border: 1px solid #ff0000;
+            color: #ff6666;
+        }
+        .test-group {
+            margin: 20px 0;
+            border: 2px solid #333;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .test-group h3 {
+            color: #00ccff;
+            margin-top: 0;
+        }
+        .summary {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 8px;
+        }
+        .algorithm-debug {
+            background: #2a2a2a;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Set Cover Algorithm Test Suite - Wallet Defense System 🛡️</h1>
+    <p>Testing against the evil eBay corporate overlords...</p>
+    
+    <div id="results"></div>
+    <div id="summary"></div>
+
+    <script>
+        // Copy the actual algorithm functions from popup.js
+        function greedySetCoverSolver(cardRequests, sellerOptions) {
+            const uncoveredRequests = new Set(cardRequests.map((_, idx) => idx));
+            const selectedSellers = new Map(); // sellerId -> seller info
+            const assignments = []; // Track which seller covers which card request
+            const sellerStockUsed = new Map(); // Track how much stock each seller has used
+            
+            let iterations = 0;
+            const maxIterations = cardRequests.length * 2; // Prevent infinite loops
+            
+            // Debug logging for tests
+            const debugLogs = [];
+            
+            while (uncoveredRequests.size > 0 && iterations < maxIterations) {
+                iterations++;
+                let bestOption = null;
+                let bestCostEffectiveness = Infinity;
+                let bestCoveredRequests = [];
+                
+                debugLogs.push(`Iteration ${iterations}: ${uncoveredRequests.size} uncovered requests remaining`);
+                
+                // Group seller options by seller
+                const sellerGroups = new Map();
+                for (const option of sellerOptions) {
+                    if (!sellerGroups.has(option.sellerId)) {
+                        sellerGroups.set(option.sellerId, []);
+                    }
+                    sellerGroups.get(option.sellerId).push(option);
+                }
+                
+                // Evaluate each seller with different card combinations
+                for (const [sellerId, options] of sellerGroups.entries()) {
+                    // Group requests by card type to track stock properly
+                    const cardTypeGroups = new Map();
+                    for (const requestIdx of uncoveredRequests) {
+                        const request = cardRequests[requestIdx];
+                        const cardKey = `${request.cardId}_${request.isFoil ? 'foil' : 'normal'}`;
+                        
+                        if (!cardTypeGroups.has(cardKey)) {
+                            cardTypeGroups.set(cardKey, {
+                                requests: [],
+                                option: null
+                            });
+                        }
+                        cardTypeGroups.get(cardKey).requests.push({
+                            requestIdx: requestIdx,
+                            request: request
+                        });
+                    }
+
+                    // Find available card types for this seller
+                    const availableCardTypes = [];
+                    for (const [cardKey, cardGroup] of cardTypeGroups.entries()) {
+                        const option = options.find(opt => {
+                            const optKey = `${opt.cardRequest.cardId}_${opt.cardRequest.isFoil ? 'foil' : 'normal'}`;
+                            return optKey === cardKey;
+                        });
+                        
+                        if (!option) continue; // This seller doesn't have this card
+                        
+                        // Get available stock from the seller data
+                        const totalStock = option.quantity || 1;
+                        
+                        // Calculate how much stock this seller has already used
+                        const stockKey = `${option.sellerId}_${cardKey}`;
+                        const stockAlreadyUsed = sellerStockUsed.get(stockKey) || 0;
+                        const availableStock = totalStock - stockAlreadyUsed;
+                        
+                        const requestsToAssign = Math.min(cardGroup.requests.length, availableStock);
+                        
+                        if (requestsToAssign > 0) {
+                            availableCardTypes.push({
+                                cardKey,
+                                cardGroup,
+                                option,
+                                stockKey,
+                                requestsToAssign,
+                                totalStock,
+                                stockAlreadyUsed
+                            });
+                        }
+                    }
+
+                    if (availableCardTypes.length === 0) continue;
+
+                    // Consider each card type individually AND all combinations
+                    const combinationsToTry = [];
+                    
+                    // Single card types
+                    for (const cardType of availableCardTypes) {
+                        combinationsToTry.push([cardType]);
+                    }
+                    
+                    // All available cards together (current behavior)
+                    if (availableCardTypes.length > 1) {
+                        combinationsToTry.push(availableCardTypes);
+                    }
+
+                    // Evaluate each combination
+                    for (const combination of combinationsToTry) {
+                        const coveredRequestIndices = [];
+                        const sellerAssignments = [];
+                        
+                        for (const cardType of combination) {
+                            for (let i = 0; i < cardType.requestsToAssign; i++) {
+                                const { requestIdx, request } = cardType.cardGroup.requests[i];
+                                coveredRequestIndices.push(requestIdx);
+                                sellerAssignments.push({
+                                    requestIndex: requestIdx,
+                                    option: cardType.option,
+                                    stockKey: cardType.stockKey
+                                });
+                            }
+                        }
+                        
+                        // Calculate cost for this combination
+                        const subtotal = sellerAssignments.reduce((sum, assignment) => sum + assignment.option.price, 0);
+                        
+                        // Get shipping cost - but don't charge shipping if we're already buying from this seller
+                        const firstCardType = combination[0];
+                        let shippingCost = 0;
+                        
+                        // Only charge shipping if this seller is not already selected
+                        if (!selectedSellers.has(sellerId)) {
+                            shippingCost = firstCardType.option.shippingPrice || 0;
+                            const sellerShippingPrice = firstCardType.option.sellerShippingPrice || 0;
+                            
+                            // Apply free shipping policy: if sellerShippingPrice is 0 and subtotal >= $5, shipping is free
+                            if (sellerShippingPrice === 0 && subtotal >= 5) {
+                                shippingCost = 0;
+                            }
+                        }
+                        
+                        const totalCost = subtotal + shippingCost;
+                        const costEffectiveness = totalCost / coveredRequestIndices.length;
+                        
+                        const comboType = combination.length === 1 ? 'SINGLE' : 'MULTI';
+                        const cardList = combination.map(c => c.cardKey).join('+');
+                        
+                        debugLogs.push(`  Seller ${sellerId} (${comboType}): ${cardList} - $${totalCost.toFixed(2)} for ${coveredRequestIndices.length} cards (CE: ${costEffectiveness.toFixed(2)}) [Already selected: ${selectedSellers.has(sellerId)}]`);
+                        
+                        if (costEffectiveness < bestCostEffectiveness) {
+                            bestCostEffectiveness = costEffectiveness;
+                            bestOption = {
+                                sellerId: sellerId,
+                                sellerName: combination[0].option.sellerName,
+                                sellerKey: combination[0].option.sellerKey,
+                                subtotal: subtotal,
+                                shippingCost: shippingCost,
+                                totalCost: totalCost,
+                                assignments: sellerAssignments,
+                                comboType: comboType,
+                                cardList: cardList
+                            };
+                            bestCoveredRequests = coveredRequestIndices;
+                        }
+                    }
+                }
+                
+                if (!bestOption) {
+                    debugLogs.push(`No valid options found. Terminating.`);
+                    return {
+                        success: false,
+                        message: "Cannot find sellers for some cards. Some cards may be out of stock.",
+                        debugLogs: debugLogs
+                    };
+                }
+                
+                debugLogs.push(`  SELECTED: Seller ${bestOption.sellerId} - ${bestOption.cardList} - $${bestOption.totalCost.toFixed(2)} (CE: ${bestCostEffectiveness.toFixed(2)})`);
+                
+                // Select this seller and update stock usage tracking
+                selectedSellers.set(bestOption.sellerId, bestOption);
+                assignments.push(...bestOption.assignments);
+                
+                // Update stock tracking for this seller
+                for (const assignment of bestOption.assignments) {
+                    if (assignment.stockKey) {
+                        const currentUsage = sellerStockUsed.get(assignment.stockKey) || 0;
+                        sellerStockUsed.set(assignment.stockKey, currentUsage + 1);
+                    }
+                }
+                
+                // Remove covered requests
+                for (const requestIdx of bestCoveredRequests) {
+                    uncoveredRequests.delete(requestIdx);
+                }
+                
+                // Additional safeguard: ensure we're making progress
+                if (bestCoveredRequests.length === 0) {
+                    debugLogs.push('No progress made in set cover iteration, breaking to prevent infinite loop');
+                    break;
+                }
+            }
+            
+            // Check if we successfully covered all requests
+            if (uncoveredRequests.size > 0) {
+                if (iterations >= maxIterations) {
+                    debugLogs.push('Set cover algorithm reached maximum iterations, may not have optimal solution');
+                }
+                return {
+                    success: false,
+                    message: `Could not cover ${uncoveredRequests.size} card requests. Some cards may be out of stock or have no available sellers.`,
+                    debugLogs: debugLogs
+                };
+            }
+            
+            return {
+                success: true,
+                solution: {
+                    sellers: selectedSellers,
+                    assignments: assignments,
+                    cardRequests: cardRequests
+                },
+                debugLogs: debugLogs
+            };
+        }
+
+        function calculateFinalCosts(solution) {
+            const { sellers, assignments, cardRequests } = solution;
+            
+            const sellerDetails = [];
+            let grandTotal = 0;
+            let totalShipping = 0;
+            let totalSubtotal = 0;
+            
+            for (const [sellerId, sellerInfo] of sellers.entries()) {
+                const sellerAssignments = assignments.filter(a => a.option.sellerId === sellerId);
+                
+                // Group assignments by card to get quantities
+                const cardQuantities = new Map();
+                for (const assignment of sellerAssignments) {
+                    const key = `${assignment.option.cardRequest.cardId}_${assignment.option.cardRequest.isFoil}`;
+                    const cardInfo = assignment.option.cardRequest;
+                    
+                    if (!cardQuantities.has(key)) {
+                        cardQuantities.set(key, {
+                            card: cardInfo,
+                            quantity: 0,
+                            price: assignment.option.price,
+                            option: assignment.option
+                        });
+                    }
+                    cardQuantities.get(key).quantity++;
+                }
+                
+                const cards = Array.from(cardQuantities.values());
+                const subtotal = cards.reduce((sum, card) => sum + (card.price * card.quantity), 0);
+                
+                const sellerDetails_entry = {
+                    sellerId: sellerId,
+                    sellerName: sellerInfo.sellerName,
+                    sellerKey: sellerInfo.sellerKey,
+                    cards: cards,
+                    subtotal: subtotal,
+                    shippingCost: sellerInfo.shippingCost,
+                    totalCost: sellerInfo.totalCost
+                };
+                
+                sellerDetails.push(sellerDetails_entry);
+                grandTotal += sellerInfo.totalCost;
+                totalShipping += sellerInfo.shippingCost;
+                totalSubtotal += subtotal;
+            }
+            
+            return {
+                success: true,
+                sellers: sellerDetails,
+                totals: {
+                    subtotal: totalSubtotal,
+                    shipping: totalShipping,
+                    total: grandTotal
+                },
+                assignments: assignments
+            };
+        }
+
+        // Test framework
+        class TestRunner {
+            constructor() {
+                this.tests = [];
+                this.passedTests = 0;
+                this.failedTests = 0;
+            }
+
+            addTest(name, testFn) {
+                this.tests.push({ name, testFn });
+            }
+
+            createTestData(cards, sellers) {
+                // Convert cards to cardRequests format (expand by quantity)
+                const cardRequests = [];
+                for (const card of cards) {
+                    for (let i = 0; i < (card.quantity || 1); i++) {
+                        cardRequests.push({
+                            cardId: card.id,
+                            isFoil: card.isFoil || false,
+                            name: card.name,
+                            mana: card.mana || '',
+                            sellerIdx: card.id, // Use card ID as seller index for simplicity
+                            requestIndex: i
+                        });
+                    }
+                }
+
+                // Convert sellers to sellerOptions format
+                const sellerOptions = [];
+                for (const card of cards) {
+                    const cardSellers = sellers[card.id] || [];
+                    for (let sellerIdx = 0; sellerIdx < cardSellers.length; sellerIdx++) {
+                        const seller = cardSellers[sellerIdx];
+                        if (seller.quantity > 0) {
+                            sellerOptions.push({
+                                sellerId: seller.sellerId,
+                                sellerName: seller.sellerName || `Seller ${seller.sellerId}`,
+                                sellerKey: seller.sellerKey || seller.sellerId,
+                                price: seller.price,
+                                shippingPrice: seller.shippingPrice || 0,
+                                sellerShippingPrice: seller.sellerShippingPrice || 0,
+                                quantity: seller.quantity,
+                                cardRequest: cardRequests.find(req => req.cardId === card.id && req.isFoil === (card.isFoil || false)),
+                                originalSellerIdx: card.id,
+                                originalSellerIdxIdx: sellerIdx,
+                                productConditionId: `${card.id}_${seller.sellerId}_${sellerIdx}`
+                            });
+                        }
+                    }
+                }
+
+                return { cardRequests, sellerOptions };
+            }
+
+            runTest(testCase) {
+                try {
+                    const result = testCase.testFn();
+                    if (result.success) {
+                        this.passedTests++;
+                        return { success: true, message: result.message || 'Test passed' };
+                    } else {
+                        this.failedTests++;
+                        return { success: false, message: result.message || 'Test failed' };
+                    }
+                } catch (error) {
+                    this.failedTests++;
+                    return { success: false, message: `Test threw error: ${error.message}` };
+                }
+            }
+
+            runAllTests() {
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = '';
+
+                for (const testCase of this.tests) {
+                    const result = this.runTest(testCase);
+                    const div = document.createElement('div');
+                    div.className = `test-result ${result.success ? 'pass' : 'fail'}`;
+                    div.innerHTML = `
+                        <strong>${result.success ? '✅ PASS' : '❌ FAIL'}</strong>: ${testCase.name}
+                        <br>${result.message}
+                        ${result.debugInfo || ''}
+                    `;
+                    resultsDiv.appendChild(div);
+                }
+
+                const summaryDiv = document.getElementById('summary');
+                const totalTests = this.passedTests + this.failedTests;
+                const successRate = ((this.passedTests / totalTests) * 100).toFixed(1);
+                summaryDiv.innerHTML = `
+                    <div class="summary ${this.failedTests === 0 ? 'pass' : 'fail'}">
+                        🛡️ WALLET DEFENSE SYSTEM TEST RESULTS 🛡️<br>
+                        Passed: ${this.passedTests}/${totalTests} (${successRate}%)<br>
+                        ${this.failedTests === 0 ? 
+                            '🎉 ALL TESTS PASSED! Ready to defend against corporate greed!' : 
+                            `⚠️ ${this.failedTests} tests failed. The algorithm needs more work!`}
+                    </div>
+                `;
+            }
+        }
+
+        // Create test runner and add all test cases
+        const runner = new TestRunner();
+
+        // Test Group 1: Basic Functionality
+        runner.addTest("Single card, single seller", () => {
+            const cards = [
+                { id: 1, name: "Lightning Bolt", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 5.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 1.99 }
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should select seller 101, total cost should be 5.00 + 1.99 = 6.99
+            if (finalResult.totals.total !== 6.99) {
+                return { success: false, message: `Expected total $6.99, got $${finalResult.totals.total}` };
+            }
+
+            return { success: true, message: `Correct total: $${finalResult.totals.total}` };
+        });
+
+        runner.addTest("Multiple cards, single seller consolidation", () => {
+            const cards = [
+                { id: 1, name: "Lightning Bolt", quantity: 1, isFoil: false },
+                { id: 2, name: "Counterspell", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 5.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 1.99 }
+                ],
+                2: [
+                    { sellerId: 101, price: 3.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 1.99 }
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should consolidate to seller 101: (5.00 + 3.00) + 1.99 shipping = 9.99
+            // NOT two separate orders with shipping each
+            if (finalResult.sellers.length !== 1) {
+                return { success: false, message: `Expected 1 seller, got ${finalResult.sellers.length}` };
+            }
+
+            if (Math.abs(finalResult.totals.total - 9.99) > 0.01) {
+                return { success: false, message: `Expected total ~$9.99, got $${finalResult.totals.total}` };
+            }
+
+            if (Math.abs(finalResult.totals.shipping - 1.99) > 0.01) {
+                return { success: false, message: `Expected shipping $1.99 (consolidated), got $${finalResult.totals.shipping}` };
+            }
+
+            return { success: true, message: `✅ SHIPPING CONSOLIDATED! 1 seller, total: $${finalResult.totals.total}, shipping: $${finalResult.totals.shipping}` };
+        });
+
+        runner.addTest("Free shipping threshold test", () => {
+            const cards = [
+                { id: 1, name: "Expensive Card", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 10.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 0 } // Free shipping if >=$5
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should be $10.00 + $0.00 shipping = $10.00 (free shipping applies)
+            if (finalResult.totals.shipping !== 0) {
+                return { success: false, message: `Expected free shipping ($0), got $${finalResult.totals.shipping}` };
+            }
+
+            if (finalResult.totals.total !== 10.00) {
+                return { success: false, message: `Expected total $10.00, got $${finalResult.totals.total}` };
+            }
+
+            return { success: true, message: `✅ Free shipping applied correctly! Total: $${finalResult.totals.total}` };
+        });
+
+        runner.addTest("Stock limitation handling", () => {
+            const cards = [
+                { id: 1, name: "Lightning Bolt", quantity: 3, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 5.00, quantity: 2, shippingPrice: 1.99, sellerShippingPrice: 1.99 }, // Only has 2
+                    { sellerId: 102, price: 5.50, quantity: 5, shippingPrice: 2.99, sellerShippingPrice: 2.99 }  // More expensive but available
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should use both sellers: 2 from seller 101 + 1 from seller 102
+            if (finalResult.sellers.length !== 2) {
+                return { success: false, message: `Expected 2 sellers due to stock limits, got ${finalResult.sellers.length}` };
+            }
+
+            // Check that we get all 3 cards total
+            const totalCardsOrdered = finalResult.sellers.reduce((sum, seller) => 
+                sum + seller.cards.reduce((cardSum, card) => cardSum + card.quantity, 0), 0);
+            
+            if (totalCardsOrdered !== 3) {
+                return { success: false, message: `Expected 3 total cards, got ${totalCardsOrdered}` };
+            }
+
+            return { success: true, message: `✅ Stock limits handled! 2 sellers used, ${totalCardsOrdered} cards total` };
+        });
+
+        runner.addTest("Cost optimization: expensive vs cheap with shipping", () => {
+            const cards = [
+                { id: 1, name: "Lightning Bolt", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 3.00, quantity: 10, shippingPrice: 4.99, sellerShippingPrice: 4.99 }, // $7.99 total
+                    { sellerId: 102, price: 7.50, quantity: 10, shippingPrice: 0.99, sellerShippingPrice: 0.99 }  // $8.49 total
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should choose seller 101 (cheaper total despite high shipping)
+            if (finalResult.sellers[0].sellerId !== 101) {
+                return { success: false, message: `Expected seller 101 (cheaper total), got seller ${finalResult.sellers[0].sellerId}` };
+            }
+
+            if (Math.abs(finalResult.totals.total - 7.99) > 0.01) {
+                return { success: false, message: `Expected total $7.99, got $${finalResult.totals.total}` };
+            }
+
+            return { success: true, message: `✅ Cost optimized! Chose seller 101: $${finalResult.totals.total}` };
+        });
+
+        runner.addTest("Multiple sellers needed - complex optimization", () => {
+            const cards = [
+                { id: 1, name: "Card A", quantity: 2, isFoil: false },
+                { id: 2, name: "Card B", quantity: 2, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 1.00, quantity: 1, shippingPrice: 3.00, sellerShippingPrice: 3.00 }, // Only 1 Card A
+                    { sellerId: 102, price: 2.00, quantity: 3, shippingPrice: 1.00, sellerShippingPrice: 1.00 }  // Has enough Card A
+                ],
+                2: [
+                    { sellerId: 101, price: 1.50, quantity: 3, shippingPrice: 3.00, sellerShippingPrice: 3.00 }, // Has Card B
+                    { sellerId: 102, price: 1.25, quantity: 3, shippingPrice: 1.00, sellerShippingPrice: 1.00 }  // Cheaper Card B
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should consolidate to seller 102 for efficiency
+            // 2x Card A at $2.00 = $4.00
+            // 2x Card B at $1.25 = $2.50 
+            // Shipping: $1.00
+            // Total: $7.50
+            
+            if (finalResult.sellers.length !== 1) {
+                return { success: false, message: `Expected consolidation to 1 seller, got ${finalResult.sellers.length} sellers` };
+            }
+
+            if (finalResult.sellers[0].sellerId !== 102) {
+                return { success: false, message: `Expected seller 102 (most efficient), got seller ${finalResult.sellers[0].sellerId}` };
+            }
+
+            return { success: true, message: `✅ Complex optimization! 1 seller (${finalResult.sellers[0].sellerId}), total: $${finalResult.totals.total}` };
+        });
+
+        runner.addTest("No sellers available - graceful failure", () => {
+            const cards = [
+                { id: 1, name: "Rare Card", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [] // No sellers
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (result.success) {
+                return { success: false, message: "Algorithm should have failed with no sellers" };
+            }
+
+            if (!result.message.includes("no available sellers")) {
+                return { success: false, message: "Should mention no available sellers" };
+            }
+
+            return { success: true, message: "✅ Gracefully handled no sellers case" };
+        });
+
+        runner.addTest("All sellers out of stock", () => {
+            const cards = [
+                { id: 1, name: "Lightning Bolt", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 5.00, quantity: 0, shippingPrice: 1.99, sellerShippingPrice: 1.99 },
+                    { sellerId: 102, price: 5.50, quantity: 0, shippingPrice: 2.99, sellerShippingPrice: 2.99 }
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (result.success) {
+                return { success: false, message: "Algorithm should have failed with no stock" };
+            }
+
+            return { success: true, message: "✅ Gracefully handled out of stock situation" };
+        });
+
+        runner.addTest("Foil vs normal card handling", () => {
+            const cards = [
+                { id: 1, name: "Lightning Bolt", quantity: 1, isFoil: false },
+                { id: 1, name: "Lightning Bolt", quantity: 1, isFoil: true }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 5.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 1.99 }, // Normal
+                    { sellerId: 101, price: 25.00, quantity: 5, shippingPrice: 1.99, sellerShippingPrice: 1.99 } // Foil (same seller but different listing)
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            
+            // Manually adjust foil option
+            sellerOptions[1].cardRequest.isFoil = true;
+
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should consolidate both to seller 101: $5.00 + $25.00 + $1.99 shipping = $31.99
+            if (finalResult.totals.shipping > 2.0) { // Should not pay shipping twice
+                return { success: false, message: `Shipping not consolidated: $${finalResult.totals.shipping}` };
+            }
+
+            return { success: true, message: `✅ Foil/normal consolidated! Total: $${finalResult.totals.total}, shipping: $${finalResult.totals.shipping}` };
+        });
+
+        runner.addTest("Infinite loop prevention test", () => {
+            const cards = Array.from({length: 100}, (_, i) => ({
+                id: i + 1,
+                name: `Card ${i + 1}`,
+                quantity: 1,
+                isFoil: false
+            }));
+
+            const sellers = {};
+            for (let i = 1; i <= 100; i++) {
+                sellers[i] = [
+                    { sellerId: i, price: 1.00, quantity: 1, shippingPrice: 1.00, sellerShippingPrice: 1.00 }
+                ];
+            }
+
+            const startTime = Date.now();
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+            const endTime = Date.now();
+            const duration = endTime - startTime;
+
+            if (duration > 5000) { // Should complete within 5 seconds
+                return { success: false, message: `Algorithm took too long: ${duration}ms` };
+            }
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            return { success: true, message: `✅ Completed in ${duration}ms with ${cards.length} cards` };
+        });
+
+        // Advanced edge case tests
+        runner.addTest("Same seller different shipping policies", () => {
+            const cards = [
+                { id: 1, name: "Card A", quantity: 1, isFoil: false },
+                { id: 2, name: "Card B", quantity: 1, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 2.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 1.99 }
+                ],
+                2: [
+                    { sellerId: 101, price: 4.00, quantity: 10, shippingPrice: 1.99, sellerShippingPrice: 0 } // Same seller, free shipping policy
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Total should be 6.00 + 0.00 shipping (free shipping policy applies when total >= $5)
+            if (finalResult.totals.shipping !== 0) {
+                return { success: false, message: `Expected free shipping, got $${finalResult.totals.shipping}` };
+            }
+
+            return { success: true, message: `✅ Free shipping policy applied! Total: $${finalResult.totals.total}` };
+        });
+
+        runner.addTest("Quantity edge case: large quantities", () => {
+            const cards = [
+                { id: 1, name: "Bulk Card", quantity: 50, isFoil: false }
+            ];
+            const sellers = {
+                1: [
+                    { sellerId: 101, price: 0.10, quantity: 30, shippingPrice: 5.99, sellerShippingPrice: 5.99 },
+                    { sellerId: 102, price: 0.12, quantity: 25, shippingPrice: 4.99, sellerShippingPrice: 4.99 }
+                ]
+            };
+
+            const { cardRequests, sellerOptions } = runner.createTestData(cards, sellers);
+            const result = greedySetCoverSolver(cardRequests, sellerOptions);
+
+            if (!result.success) {
+                return { success: false, message: "Algorithm failed: " + result.message };
+            }
+
+            const finalResult = calculateFinalCosts(result.solution);
+            
+            // Should use both sellers to get all 50 cards
+            const totalCards = finalResult.sellers.reduce((sum, seller) => 
+                sum + seller.cards.reduce((cardSum, card) => cardSum + card.quantity, 0), 0);
+            
+            if (totalCards !== 50) {
+                return { success: false, message: `Expected 50 cards, got ${totalCards}` };
+            }
+
+            return { success: true, message: `✅ Large quantity handled! ${totalCards} cards from ${finalResult.sellers.length} sellers` };
+        });
+
+        // Run all tests
+        runner.runAllTests();
+    </script>
+</body>
+</html>

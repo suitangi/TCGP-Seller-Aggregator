@@ -20,10 +20,10 @@
   ],
   "background": {
     "scripts": ["background.js"],
-    "persistent": true,
-    "type": "module"
+    "persistent": true
   },
   "permissions": [
+    "storage",
     "cookies",
     "https://www.tcgplayer.com/*",
     "https://mp-search-api.tcgplayer.com/*",
